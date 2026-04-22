@@ -47,4 +47,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function vaults()
+    {
+        return $this->hasMany(Vault::class);
+    }
 }
