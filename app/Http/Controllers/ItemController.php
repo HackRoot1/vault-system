@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ApiResponse;
+use App\Helpers\EncryptionHelper;
 use App\Http\Requests\ItemRequest;
 use App\Http\Resources\ItemResource;
 use App\Models\Item;
@@ -12,6 +13,18 @@ use Illuminate\Http\Request;
 
 class ItemController extends Controller
 {
+    /**
+     * Get encryption service with user's derived key
+     */
+    private function getEncryptionService(): EncryptionService
+    {
+        $key = EncryptionHelper::getUserKey();
+        if (!$key) {
+            throw new \Exception('Encryption key not available');
+        }
+        return new EncryptionService($key);
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -36,8 +49,9 @@ class ItemController extends Controller
             return ApiResponse::error('Unauthorized', 403);
         }
 
+        $encryption = $this->getEncryptionService();
         $dataJson = json_encode($request->data);
-        $encrypted = EncryptionService::encrypt($dataJson);
+        $encrypted = $encryption->encrypt($dataJson);
 
         $item = $vault->items()->create([
             'type' => $request->type,
@@ -72,8 +86,9 @@ class ItemController extends Controller
             return ApiResponse::error('Unauthorized', 403);
         }
 
+        $encryption = $this->getEncryptionService();
         $dataJson = json_encode($request->data);
-        $encrypted = EncryptionService::encrypt($dataJson);
+        $encrypted = $encryption->encrypt($dataJson);
 
         $item->update([
             'type' => $request->type,

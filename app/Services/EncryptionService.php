@@ -2,38 +2,34 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Crypt;
-
 class EncryptionService
 {
     private const CIPHER = 'aes-256-gcm';
-    private const KEY_LENGTH = 32; // 256 bits
+    private string $key;
 
     /**
-     * Get the encryption key.
-     * In production, this should be a per-user or per-vault key.
-     * For demo purposes, using a derived key from app key.
+     * Constructor - initialize with encryption key
      */
-    private static function getKey(): string
+    public function __construct(string $key)
     {
-        $key = config('app.key');
-        // Derive a 32-byte key from the app key
-        return substr(hash('sha256', $key), 0, self::KEY_LENGTH);
+        if (strlen($key) !== 32) {
+            throw new \Exception('Encryption key must be exactly 32 bytes');
+        }
+        $this->key = $key;
     }
 
     /**
      * Encrypt data using AES-256-GCM
      */
-    public static function encrypt(string $data): array
+    public function encrypt(string $data): array
     {
-        $key = self::getKey();
         $iv = random_bytes(12); // 96 bits for GCM
         $tag = '';
 
         $encrypted = openssl_encrypt(
             $data,
             self::CIPHER,
-            $key,
+            $this->key,
             OPENSSL_RAW_DATA,
             $iv,
             $tag,
@@ -55,14 +51,12 @@ class EncryptionService
     /**
      * Decrypt data using AES-256-GCM
      */
-    public static function decrypt(string $encryptedData, string $iv, string $tag): string
+    public function decrypt(string $encryptedData, string $iv, string $tag): string
     {
-        $key = self::getKey();
-
         $decrypted = openssl_decrypt(
             base64_decode($encryptedData),
             self::CIPHER,
-            $key,
+            $this->key,
             OPENSSL_RAW_DATA,
             base64_decode($iv),
             base64_decode($tag)

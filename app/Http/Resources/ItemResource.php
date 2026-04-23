@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Helpers\EncryptionHelper;
 use App\Services\EncryptionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -15,8 +16,14 @@ class ItemResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $key = EncryptionHelper::getUserKey();
+        if (!$key) {
+            throw new \Exception('Encryption key not available');
+        }
+
+        $encryption = new EncryptionService($key);
         $decryptedData = json_decode(
-            EncryptionService::decrypt(
+            $encryption->decrypt(
                 $this->encrypted_data,
                 $this->iv,
                 $this->tag
