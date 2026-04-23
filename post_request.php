@@ -1,5 +1,7 @@
 <?php
-function post($url, $data) {
+
+function post($url, $data)
+{
     $opts = [
         'http' => [
             'method' => 'POST',

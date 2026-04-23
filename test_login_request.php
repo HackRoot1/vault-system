@@ -1,4 +1,5 @@
 <?php
+
 $payload = json_encode([
     'email' => 'john@example.com',
     'password' => 'MySecure@Pass123',

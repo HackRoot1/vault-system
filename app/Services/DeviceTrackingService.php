@@ -50,7 +50,7 @@ class DeviceTrackingService
         $lastLoginIp = $user->last_login_ip;
 
         // If first login, not suspicious
-        if (!$lastLoginIp) {
+        if (! $lastLoginIp) {
             return false;
         }
 
@@ -64,7 +64,7 @@ class DeviceTrackingService
      */
     public function getLastLoginInfo(User $user): ?array
     {
-        if (!$user->last_login_at) {
+        if (! $user->last_login_at) {
             return null;
         }
 

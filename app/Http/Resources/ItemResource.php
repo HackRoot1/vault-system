@@ -17,7 +17,7 @@ class ItemResource extends JsonResource
     public function toArray(Request $request): array
     {
         $key = EncryptionHelper::getUserKey();
-        if (!$key) {
+        if (! $key) {
             throw new \Exception('Encryption key not available');
         }
 

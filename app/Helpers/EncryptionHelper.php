@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Cache;
 class EncryptionHelper
 {
     private static ?string $userKey = null;
+
     private static ?int $userId = null;
+
     private const CACHE_PREFIX = 'encryption_key:';
 
     /**
@@ -26,7 +28,7 @@ class EncryptionHelper
     public static function setUserKeyForToken(int $tokenId, string $key): void
     {
         self::$userKey = $key;
-        Cache::forever(self::CACHE_PREFIX . $tokenId, base64_encode($key));
+        Cache::forever(self::CACHE_PREFIX.$tokenId, base64_encode($key));
     }
 
     /**
@@ -39,16 +41,17 @@ class EncryptionHelper
         }
 
         $tokenId = self::getCurrentTokenId();
-        if (!$tokenId) {
+        if (! $tokenId) {
             return null;
         }
 
-        $cached = Cache::get(self::CACHE_PREFIX . $tokenId);
-        if (!is_string($cached)) {
+        $cached = Cache::get(self::CACHE_PREFIX.$tokenId);
+        if (! is_string($cached)) {
             return null;
         }
 
         $decoded = base64_decode($cached, true);
+
         return $decoded !== false ? $decoded : $cached;
     }
 
@@ -73,7 +76,7 @@ class EncryptionHelper
         }
 
         if ($tokenId) {
-            Cache::forget(self::CACHE_PREFIX . $tokenId);
+            Cache::forget(self::CACHE_PREFIX.$tokenId);
         }
     }
 
@@ -91,12 +94,12 @@ class EncryptionHelper
     private static function getCurrentTokenId(): ?int
     {
         $bearer = request()->bearerToken();
-        if (!$bearer) {
+        if (! $bearer) {
             return null;
         }
 
         $parts = explode('|', $bearer, 2);
-        if (count($parts) !== 2 || !is_numeric($parts[0])) {
+        if (count($parts) !== 2 || ! is_numeric($parts[0])) {
             return null;
         }
 

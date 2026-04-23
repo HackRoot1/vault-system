@@ -16,7 +16,7 @@ class ApiRateLimit
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $key = $request->ip() . '|' . $request->route()?->getName();
+        $key = $request->ip().'|'.$request->route()?->getName();
 
         // Different limits for different endpoints
         $maxAttempts = match ($request->route()?->getName()) {

@@ -6,16 +6,24 @@ use App\Helpers\ApiResponse;
 use App\Http\Requests\VaultRequest;
 use App\Http\Resources\VaultResource;
 use App\Models\Vault;
-use Illuminate\Http\Request;
+use App\Services\VaultService;
 
 class VaultController extends Controller
 {
+    protected VaultService $vaultService;
+
+    public function __construct(VaultService $vaultService)
+    {
+        $this->vaultService = $vaultService;
+    }
+
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $vaults = auth()->user()->vaults;
+        $vaults = $this->vaultService->getUserVaults(auth()->id());
+
         return ApiResponse::success(VaultResource::collection($vaults));
     }
 
@@ -24,7 +32,8 @@ class VaultController extends Controller
      */
     public function store(VaultRequest $request)
     {
-        $vault = auth()->user()->vaults()->create($request->validated());
+        $vault = $this->vaultService->createVault(auth()->id(), $request->validated());
+
         return ApiResponse::success(new VaultResource($vault), 'Vault created successfully', 201);
     }
 
@@ -33,10 +42,10 @@ class VaultController extends Controller
      */
     public function show(Vault $vault)
     {
-        // Ensure the vault belongs to the authenticated user
-        if ($vault->user_id !== auth()->id()) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
+
         return ApiResponse::success(new VaultResource($vault));
     }
 
@@ -45,11 +54,18 @@ class VaultController extends Controller
      */
     public function update(VaultRequest $request, Vault $vault)
     {
-        // Ensure the vault belongs to the authenticated user
-        if ($vault->user_id !== auth()->id()) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
-        $vault->update($request->validated());
+
+        $updated = $this->vaultService->updateVault(auth()->id(), $vault->id, $request->validated());
+
+        if (! $updated) {
+            return ApiResponse::error('Vault not found', 404);
+        }
+
+        $vault->refresh();
+
         return ApiResponse::success(new VaultResource($vault), 'Vault updated successfully');
     }
 
@@ -58,11 +74,16 @@ class VaultController extends Controller
      */
     public function destroy(Vault $vault)
     {
-        // Ensure the vault belongs to the authenticated user
-        if ($vault->user_id !== auth()->id()) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
-        $vault->delete();
+
+        $deleted = $this->vaultService->deleteVault(auth()->id(), $vault->id);
+
+        if (! $deleted) {
+            return ApiResponse::error('Vault not found', 404);
+        }
+
         return ApiResponse::success(null, 'Vault deleted successfully');
     }
 }

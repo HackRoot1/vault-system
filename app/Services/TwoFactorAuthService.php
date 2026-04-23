@@ -11,7 +11,7 @@ class TwoFactorAuthService
 
     public function __construct()
     {
-        $this->google2fa = new Google2FA();
+        $this->google2fa = new Google2FA;
     }
 
     /**
@@ -73,6 +73,6 @@ class TwoFactorAuthService
      */
     public function isEnabled(User $user): bool
     {
-        return $user->two_factor_enabled && !empty($user->two_factor_secret);
+        return $user->two_factor_enabled && ! empty($user->two_factor_secret);
     }
 }

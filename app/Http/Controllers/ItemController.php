@@ -3,27 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ApiResponse;
-use App\Helpers\EncryptionHelper;
 use App\Http\Requests\ItemRequest;
 use App\Http\Resources\ItemResource;
 use App\Models\Item;
 use App\Models\Vault;
-use App\Services\EncryptionService;
-use Carbon\Carbon;
+use App\Services\ItemService;
+use App\Services\VaultService;
 use Illuminate\Http\Request;
 
 class ItemController extends Controller
 {
-    /**
-     * Get encryption service with user's derived key
-     */
-    private function getEncryptionService(): EncryptionService
+    protected ItemService $itemService;
+
+    protected VaultService $vaultService;
+
+    public function __construct(ItemService $itemService, VaultService $vaultService)
     {
-        $key = EncryptionHelper::getUserKey();
-        if (!$key) {
-            throw new \Exception('Encryption key not available');
-        }
-        return new EncryptionService($key);
+        $this->itemService = $itemService;
+        $this->vaultService = $vaultService;
     }
 
     /**
@@ -31,12 +28,12 @@ class ItemController extends Controller
      */
     public function index(Vault $vault)
     {
-        // Ensure vault belongs to authenticated user
-        if ($vault->user_id !== auth()->id()) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $items = $vault->items;
+        $items = $this->itemService->getVaultItems($vault->id);
+
         return ApiResponse::success(ItemResource::collection($items));
     }
 
@@ -46,27 +43,15 @@ class ItemController extends Controller
     public function sync(Request $request)
     {
         $lastSync = $request->query('last_sync');
-        if (!$lastSync) {
+        if (! $lastSync) {
             return ApiResponse::error('The last_sync query parameter is required.', 400);
         }
 
         try {
-            $lastSync = Carbon::parse($lastSync);
+            $items = $this->itemService->syncItems(auth()->id(), $lastSync);
         } catch (\Exception $e) {
             return ApiResponse::error('Invalid last_sync timestamp.', 400);
         }
-
-        $user = auth()->user();
-        $vaultIds = $user->vaults()->pluck('id');
-
-        $items = Item::withTrashed()
-            ->whereIn('vault_id', $vaultIds)
-            ->where(function ($query) use ($lastSync) {
-                $query->where('updated_at', '>', $lastSync)
-                    ->orWhere('deleted_at', '>', $lastSync);
-            })
-            ->orderBy('updated_at')
-            ->get();
 
         return ApiResponse::success(ItemResource::collection($items));
     }
@@ -76,23 +61,17 @@ class ItemController extends Controller
      */
     public function store(ItemRequest $request, Vault $vault)
     {
-        // Ensure vault belongs to authenticated user
-        if ($vault->user_id !== auth()->id()) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $encryption = $this->getEncryptionService();
-        $dataJson = json_encode($request->data);
-        $encrypted = $encryption->encrypt($dataJson);
+        try {
+            $item = $this->itemService->createItem($vault->id, $request->validated());
 
-        $item = $vault->items()->create([
-            'type' => $request->type,
-            'encrypted_data' => $encrypted['encrypted_data'],
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
-        ]);
-
-        return ApiResponse::success(new ItemResource($item), 'Item created successfully', 201);
+            return ApiResponse::success(new ItemResource($item), 'Item created successfully', 201);
+        } catch (\Exception $e) {
+            return ApiResponse::error('Failed to create item: '.$e->getMessage(), 500);
+        }
     }
 
     /**
@@ -100,8 +79,8 @@ class ItemController extends Controller
      */
     public function show(Vault $vault, Item $item)
     {
-        // Ensure vault and item belong to authenticated user
-        if ($vault->user_id !== auth()->id() || $item->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id) ||
+            ! $this->itemService->getUserVaultItem(auth()->id(), $vault->id, $item->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
@@ -113,23 +92,24 @@ class ItemController extends Controller
      */
     public function update(ItemRequest $request, Vault $vault, Item $item)
     {
-        // Ensure vault and item belong to authenticated user
-        if ($vault->user_id !== auth()->id() || $item->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id) ||
+            ! $this->itemService->getUserVaultItem(auth()->id(), $vault->id, $item->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $encryption = $this->getEncryptionService();
-        $dataJson = json_encode($request->data);
-        $encrypted = $encryption->encrypt($dataJson);
+        try {
+            $updated = $this->itemService->updateItem($vault->id, $item->id, $request->validated());
 
-        $item->update([
-            'type' => $request->type,
-            'encrypted_data' => $encrypted['encrypted_data'],
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
-        ]);
+            if (! $updated) {
+                return ApiResponse::error('Item not found', 404);
+            }
 
-        return ApiResponse::success(new ItemResource($item), 'Item updated successfully');
+            $item->refresh();
+
+            return ApiResponse::success(new ItemResource($item), 'Item updated successfully');
+        } catch (\Exception $e) {
+            return ApiResponse::error('Failed to update item: '.$e->getMessage(), 500);
+        }
     }
 
     /**
@@ -137,12 +117,17 @@ class ItemController extends Controller
      */
     public function destroy(Vault $vault, Item $item)
     {
-        // Ensure vault and item belong to authenticated user
-        if ($vault->user_id !== auth()->id() || $item->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(auth()->id(), $vault->id) ||
+            ! $this->itemService->getUserVaultItem(auth()->id(), $vault->id, $item->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $item->delete();
+        $deleted = $this->itemService->deleteItem($vault->id, $item->id);
+
+        if (! $deleted) {
+            return ApiResponse::error('Item not found', 404);
+        }
+
         return ApiResponse::success(null, 'Item deleted successfully');
     }
 }

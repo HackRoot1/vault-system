@@ -1,5 +1,7 @@
 <?php
-function post($url, $data) {
+
+function post($url, $data)
+{
     $opts = [
         'http' => [
             'method' => 'POST',
@@ -14,8 +16,10 @@ function post($url, $data) {
     if ($result === false) {
         echo "ERROR\n";
         var_dump($http_response_header);
+
         return null;
     }
+
     return $result;
 }
 

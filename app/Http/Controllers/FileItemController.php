@@ -3,72 +3,56 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ApiResponse;
-use App\Helpers\EncryptionHelper;
 use App\Http\Requests\FileItemRequest;
 use App\Http\Resources\FileItemResource;
 use App\Models\FileItem;
 use App\Models\Vault;
-use App\Services\EncryptionService;
-use Illuminate\Http\Request;
+use App\Services\FileService;
+use App\Services\VaultService;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 
 class FileItemController extends Controller
 {
-    private const DOWNLOAD_TOKEN_CACHE_PREFIX = 'file_download_token:';
-    private const DOWNLOAD_TOKEN_TTL_SECONDS = 600;
+    protected FileService $fileService;
 
-    /**
-     * Get encryption service with user's derived key.
-     */
-    private function getEncryptionService(): EncryptionService
+    protected VaultService $vaultService;
+
+    public function __construct(FileService $fileService, VaultService $vaultService)
     {
-        $key = EncryptionHelper::getUserKey();
-        if (!$key) {
-            throw new \Exception('Encryption key not available');
-        }
-
-        return new EncryptionService($key);
+        $this->fileService = $fileService;
+        $this->vaultService = $vaultService;
     }
 
     public function index(Vault $vault)
     {
-        if ($vault->user_id !== Auth::id()) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        return ApiResponse::success(FileItemResource::collection($vault->fileItems));
+        $files = $this->fileService->getVaultFiles($vault->id);
+
+        return ApiResponse::success(FileItemResource::collection($files));
     }
 
     public function store(FileItemRequest $request, Vault $vault)
     {
-        if ($vault->user_id !== Auth::id()) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $uploadedFile = $request->file('file');
-        $rawContents = file_get_contents($uploadedFile->getRealPath());
+        try {
+            $fileItem = $this->fileService->uploadFile($vault->id, $request->file('file'));
 
-        $encryption = $this->getEncryptionService();
-        $encrypted = $encryption->encrypt($rawContents);
-
-        $path = sprintf('vaults/%d/%s.enc', $vault->id, uniqid('', true));
-        Storage::disk('local')->put($path, base64_decode($encrypted['encrypted_data']));
-
-        $fileItem = $vault->fileItems()->create([
-            'file_name' => $uploadedFile->getClientOriginalName(),
-            'file_path' => $path,
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
-        ]);
-
-        return ApiResponse::success(new FileItemResource($fileItem), 'File uploaded successfully', 201);
+            return ApiResponse::success(new FileItemResource($fileItem), 'File uploaded successfully', 201);
+        } catch (\Exception $e) {
+            return ApiResponse::error('Failed to upload file: '.$e->getMessage(), 500);
+        }
     }
 
     public function show(Vault $vault, FileItem $file)
     {
-        if ($vault->user_id !== Auth::id() || $file->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
@@ -77,101 +61,72 @@ class FileItemController extends Controller
 
     public function update(FileItemRequest $request, Vault $vault, FileItem $file)
     {
-        if ($vault->user_id !== Auth::id() || $file->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $uploadedFile = $request->file('file');
-        $rawContents = file_get_contents($uploadedFile->getRealPath());
+        try {
+            $updated = $this->fileService->updateFile($vault->id, $file->id, $request->file('file'));
 
-        $encryption = $this->getEncryptionService();
-        $encrypted = $encryption->encrypt($rawContents);
+            if (! $updated) {
+                return ApiResponse::error('File not found', 404);
+            }
 
-        $newPath = sprintf('vaults/%d/%s.enc', $vault->id, uniqid('', true));
-        Storage::disk('local')->put($newPath, base64_decode($encrypted['encrypted_data']));
-        Storage::disk('local')->delete($file->file_path);
+            $file->refresh();
 
-        $file->update([
-            'file_name' => $uploadedFile->getClientOriginalName(),
-            'file_path' => $newPath,
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
-        ]);
-
-        return ApiResponse::success(new FileItemResource($file), 'File updated successfully');
+            return ApiResponse::success(new FileItemResource($file), 'File updated successfully');
+        } catch (\Exception $e) {
+            return ApiResponse::error('Failed to update file: '.$e->getMessage(), 500);
+        }
     }
 
     public function destroy(Vault $vault, FileItem $file)
     {
-        if ($vault->user_id !== Auth::id() || $file->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        Storage::disk('local')->delete($file->file_path);
-        $file->delete();
+        $deleted = $this->fileService->deleteFile($vault->id, $file->id);
+
+        if (! $deleted) {
+            return ApiResponse::error('File not found', 404);
+        }
 
         return ApiResponse::success(null, 'File deleted successfully');
     }
 
     public function download(string $token)
     {
-        $cacheKey = self::DOWNLOAD_TOKEN_CACHE_PREFIX . $token;
-        $payload = Cache::get($cacheKey);
+        $result = $this->fileService->downloadFile($token);
 
-        if (!$payload || !isset($payload['file_item_id'], $payload['key'], $payload['user_id'])) {
+        if (! $result) {
             return ApiResponse::error('Download token invalid or expired.', 404);
         }
 
-        $fileItem = FileItem::find($payload['file_item_id']);
-        if (!$fileItem) {
-            return ApiResponse::error('File not found.', 404);
-        }
-
-        $vault = $fileItem->vault;
-        if (!$vault || $vault->user_id !== $payload['user_id']) {
-            return ApiResponse::error('Unauthorized', 403);
-        }
-
-        if (!Storage::disk('local')->exists($fileItem->file_path)) {
-            return ApiResponse::error('Encrypted file not found.', 404);
-        }
-
-        $encryptedContents = base64_encode(Storage::disk('local')->get($fileItem->file_path));
-        $key = base64_decode($payload['key']);
-        $encryption = new EncryptionService($key);
-        $decrypted = $encryption->decrypt($encryptedContents, $fileItem->iv, $fileItem->tag);
-
-        Cache::forget($cacheKey);
-
-        return response($decrypted, 200, [
+        return response($result['content'], 200, [
             'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="' . $fileItem->file_name . '"',
+            'Content-Disposition' => 'attachment; filename="'.$result['filename'].'"',
         ]);
     }
 
     public function downloadUrl(Vault $vault, FileItem $file)
     {
-        if ($vault->user_id !== Auth::id() || $file->vault_id !== $vault->id) {
+        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
-        $key = EncryptionHelper::getUserKey();
-        if (!$key) {
-            return ApiResponse::error('Encryption key not available.', 500);
+        $result = $this->fileService->generateDownloadUrl(Auth::id(), $vault->id, $file->id);
+
+        if (! $result) {
+            return ApiResponse::error('Failed to generate download URL', 500);
         }
 
-        $token = bin2hex(random_bytes(16));
-        $cacheKey = self::DOWNLOAD_TOKEN_CACHE_PREFIX . $token;
-
-        Cache::put($cacheKey, [
-            'file_item_id' => $file->id,
-            'user_id' => Auth::id(),
-            'key' => base64_encode($key),
-        ], self::DOWNLOAD_TOKEN_TTL_SECONDS);
-
         return ApiResponse::success([
-            'download_url' => route('files.download', ['token' => $token]),
-            'expires_at' => now()->addSeconds(self::DOWNLOAD_TOKEN_TTL_SECONDS)->toISOString(),
+            'download_url' => $result['download_url'],
+            'expires_at' => $result['expires_at'],
         ]);
     }
 }

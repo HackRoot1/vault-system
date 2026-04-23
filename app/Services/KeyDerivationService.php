@@ -5,7 +5,9 @@ namespace App\Services;
 class KeyDerivationService
 {
     private const ALGORITHM = 'sha256';
+
     private const ITERATIONS = 100000;
+
     private const KEY_LENGTH = 32; // 256 bits for AES-256
 
     /**

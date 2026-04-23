@@ -5,6 +5,7 @@ namespace App\Services;
 class EncryptionService
 {
     private const CIPHER = 'aes-256-gcm';
+
     private string $key;
 
     /**
