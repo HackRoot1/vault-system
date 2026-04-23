@@ -9,6 +9,7 @@ use App\Http\Resources\ItemResource;
 use App\Models\Item;
 use App\Models\Vault;
 use App\Services\EncryptionService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class ItemController extends Controller
@@ -36,6 +37,37 @@ class ItemController extends Controller
         }
 
         $items = $vault->items;
+        return ApiResponse::success(ItemResource::collection($items));
+    }
+
+    /**
+     * Sync items updated since the last timestamp.
+     */
+    public function sync(Request $request)
+    {
+        $lastSync = $request->query('last_sync');
+        if (!$lastSync) {
+            return ApiResponse::error('The last_sync query parameter is required.', 400);
+        }
+
+        try {
+            $lastSync = Carbon::parse($lastSync);
+        } catch (\Exception $e) {
+            return ApiResponse::error('Invalid last_sync timestamp.', 400);
+        }
+
+        $user = auth()->user();
+        $vaultIds = $user->vaults()->pluck('id');
+
+        $items = Item::withTrashed()
+            ->whereIn('vault_id', $vaultIds)
+            ->where(function ($query) use ($lastSync) {
+                $query->where('updated_at', '>', $lastSync)
+                    ->orWhere('deleted_at', '>', $lastSync);
+            })
+            ->orderBy('updated_at')
+            ->get();
+
         return ApiResponse::success(ItemResource::collection($items));
     }
 
