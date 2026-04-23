@@ -85,7 +85,7 @@
             },
 
             arrayBufferToBase64(buffer) {
-                const bytes = new Uint8Array(buffer);
+                const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
                 let binary = '';
 
                 bytes.forEach(byte => {
@@ -93,6 +93,17 @@
                 });
 
                 return btoa(binary);
+            },
+
+            base64ToUint8Array(base64) {
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+
+                return bytes;
             },
 
             async deriveAesKey(password, saltHex, iterations = this.iterations) {
@@ -165,6 +176,40 @@
                     iv: this.arrayBufferToBase64(iv),
                     tag: this.arrayBufferToBase64(tag),
                 };
+            },
+
+            async decryptVaultItem({ encrypted_data, iv, tag }) {
+                const key = window.vaultCryptoSession.encryptionKey;
+
+                if (!key) {
+                    throw new Error('Encryption key is not available in memory. Please log in again.');
+                }
+
+                const ciphertext = this.base64ToUint8Array(encrypted_data);
+                const ivBytes = this.base64ToUint8Array(iv);
+                const tagBytes = this.base64ToUint8Array(tag);
+                const encryptedBytes = new Uint8Array(ciphertext.length + tagBytes.length);
+
+                encryptedBytes.set(ciphertext, 0);
+                encryptedBytes.set(tagBytes, ciphertext.length);
+
+                try {
+                    const decryptedBuffer = await crypto.subtle.decrypt(
+                        {
+                            name: 'AES-GCM',
+                            iv: ivBytes,
+                            tagLength: 128,
+                        },
+                        key,
+                        encryptedBytes
+                    );
+
+                    const plaintext = new TextDecoder().decode(decryptedBuffer);
+
+                    return JSON.parse(plaintext);
+                } catch (error) {
+                    throw new Error('Unable to decrypt item. The in-memory key may be missing or incorrect.');
+                }
             },
 
             clearMemoryKey() {

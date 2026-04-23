@@ -213,29 +213,89 @@ async function loadVaultItems(vaultId) {
             return;
         }
 
-        items.forEach(item => {
-            const itemElement = document.createElement('div');
-            itemElement.className = 'card mb-2';
-            itemElement.innerHTML = `
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="card-title">${item.type.charAt(0).toUpperCase() + item.type.slice(1)}</h6>
-                            <p class="card-text small text-muted">Created: ${new Date(item.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                            <button class="btn btn-sm btn-outline-info me-1" onclick="viewItem(${item.id})">View</button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.id})">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            itemsList.appendChild(itemElement);
-        });
+        const decryptedItems = await Promise.all(items.map(async item => {
+            try {
+                const data = await window.vaultCrypto.decryptVaultItem(item);
+
+                return {
+                    ...item,
+                    data,
+                    decryptionError: null,
+                };
+            } catch (error) {
+                return {
+                    ...item,
+                    data: null,
+                    decryptionError: error.message,
+                };
+            }
+        }));
+
+        itemsList.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${decryptedItems.map(renderItemRow).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
 
     } catch (error) {
-        showAlert('Failed to load vault items', 'danger');
+        const message = error.message || 'Failed to load vault items';
+        showAlert(message, 'danger');
     }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderItemRow(item) {
+    const createdAt = new Date(item.created_at).toLocaleDateString();
+
+    if (item.decryptionError) {
+        return `
+            <tr>
+                <td colspan="4" class="text-danger">${escapeHtml(item.decryptionError)}</td>
+                <td><span class="badge text-bg-danger">Decryption failed</span></td>
+                <td>${createdAt}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.id})">Delete</button>
+                </td>
+            </tr>
+        `;
+    }
+
+    return `
+        <tr>
+            <td>${escapeHtml(item.data?.title)}</td>
+            <td>${escapeHtml(item.data?.username)}</td>
+            <td><code>${escapeHtml(item.data?.password)}</code></td>
+            <td>${escapeHtml(item.type)}</td>
+            <td><span class="badge text-bg-success">Decrypted</span></td>
+            <td>${createdAt}</td>
+            <td class="text-end">
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.id})">Delete</button>
+            </td>
+        </tr>
+    `;
 }
 
 async function createVault() {
@@ -323,10 +383,6 @@ async function deleteItem(itemId) {
     }
 }
 
-function viewItem(itemId) {
-    // For now, just show an alert. In a real app, you'd open a modal with decrypted data
-    showAlert('Item viewing not implemented yet', 'info');
-}
 </script>
 @endpush
 @endsection
