@@ -11,6 +11,14 @@ class TwoFactorAuthService
 
     public function __construct()
     {
+        if (! class_exists(Google2FA::class)) {
+            $google2faPath = base_path('vendor/pragmarx/google2fa/src/Google2FA.php');
+
+            if (is_file($google2faPath)) {
+                require_once $google2faPath;
+            }
+        }
+
         $this->google2fa = new Google2FA;
     }
 

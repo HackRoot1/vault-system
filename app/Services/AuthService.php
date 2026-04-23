@@ -15,20 +15,21 @@ class AuthService
 
     protected KeyDerivationService $keyDerivationService;
 
-    protected TwoFactorAuthService $twoFactorService;
-
     protected DeviceTrackingService $deviceTrackingService;
 
     public function __construct(
         UserRepository $userRepository,
         KeyDerivationService $keyDerivationService,
-        TwoFactorAuthService $twoFactorService,
         DeviceTrackingService $deviceTrackingService
     ) {
         $this->userRepository = $userRepository;
         $this->keyDerivationService = $keyDerivationService;
-        $this->twoFactorService = $twoFactorService;
         $this->deviceTrackingService = $deviceTrackingService;
+    }
+
+    protected function twoFactorService(): TwoFactorAuthService
+    {
+        return app(TwoFactorAuthService::class);
     }
 
     public function register(array $data): array
@@ -69,12 +70,12 @@ class AuthService
         $user = Auth::user();
 
         // Check if 2FA is enabled
-        if ($this->twoFactorService->isEnabled($user)) {
+        if ($this->twoFactorService()->isEnabled($user)) {
             if (! isset($data['two_factor_code'])) {
                 return ['requires_2fa' => true, 'user_id' => $user->id];
             }
 
-            if (! $this->twoFactorService->verifyCode($user->two_factor_secret, $data['two_factor_code'])) {
+            if (! $this->twoFactorService()->verifyCode($user->two_factor_secret, $data['two_factor_code'])) {
                 return ['error' => 'Invalid two-factor authentication code', 'code' => 401];
             }
         }
@@ -121,12 +122,12 @@ class AuthService
 
     public function setup2FA(User $user): array
     {
-        if ($this->twoFactorService->isEnabled($user)) {
+        if ($this->twoFactorService()->isEnabled($user)) {
             return ['error' => 'Two-factor authentication is already enabled', 'code' => 400];
         }
 
-        $secret = $this->twoFactorService->generateSecret();
-        $qrCodeUrl = $this->twoFactorService->getQRCodeUrl($user);
+        $secret = $this->twoFactorService()->generateSecret();
+        $qrCodeUrl = $this->twoFactorService()->getQRCodeUrl($user);
 
         // Temporarily store the secret
         $user->update(['two_factor_secret' => $secret]);
@@ -143,8 +144,8 @@ class AuthService
             return false;
         }
 
-        if ($this->twoFactorService->verifyCode($user->two_factor_secret, $code)) {
-            $this->twoFactorService->enable2FA($user, $user->two_factor_secret);
+        if ($this->twoFactorService()->verifyCode($user->two_factor_secret, $code)) {
+            $this->twoFactorService()->enable2FA($user, $user->two_factor_secret);
 
             return true;
         }
@@ -154,12 +155,12 @@ class AuthService
 
     public function disable2FA(User $user, string $code): bool
     {
-        if (! $this->twoFactorService->isEnabled($user)) {
+        if (! $this->twoFactorService()->isEnabled($user)) {
             return false;
         }
 
-        if ($this->twoFactorService->verifyCode($user->two_factor_secret, $code)) {
-            $this->twoFactorService->disable2FA($user);
+        if ($this->twoFactorService()->verifyCode($user->two_factor_secret, $code)) {
+            $this->twoFactorService()->disable2FA($user);
 
             return true;
         }
