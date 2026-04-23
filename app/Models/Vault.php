@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\FileItem;
 
 class Vault extends Model
 {
@@ -21,5 +22,10 @@ class Vault extends Model
     public function items(): HasMany
     {
         return $this->hasMany(Item::class);
+    }
+
+    public function fileItems(): HasMany
+    {
+        return $this->hasMany(FileItem::class);
     }
 }

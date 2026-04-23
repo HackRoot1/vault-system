@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\FileItemController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\VaultController;
 use Illuminate\Http\Request;
@@ -23,4 +24,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/items/sync', [ItemController::class, 'sync']);
     Route::apiResource('vaults', VaultController::class);
     Route::apiResource('vaults.items', ItemController::class);
+    Route::apiResource('vaults.files', FileItemController::class);
+    Route::get('/vaults/{vault}/files/{file}/download-url', [FileItemController::class, 'downloadUrl']);
 });
+
+Route::get('/files/download/{token}', [FileItemController::class, 'download'])->name('files.download');

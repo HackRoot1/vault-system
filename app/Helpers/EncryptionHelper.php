@@ -26,7 +26,7 @@ class EncryptionHelper
     public static function setUserKeyForToken(int $tokenId, string $key): void
     {
         self::$userKey = $key;
-        Cache::forever(self::CACHE_PREFIX . $tokenId, $key);
+        Cache::forever(self::CACHE_PREFIX . $tokenId, base64_encode($key));
     }
 
     /**
@@ -43,7 +43,13 @@ class EncryptionHelper
             return null;
         }
 
-        return Cache::get(self::CACHE_PREFIX . $tokenId);
+        $cached = Cache::get(self::CACHE_PREFIX . $tokenId);
+        if (!is_string($cached)) {
+            return null;
+        }
+
+        $decoded = base64_decode($cached, true);
+        return $decoded !== false ? $decoded : $cached;
     }
 
     /**

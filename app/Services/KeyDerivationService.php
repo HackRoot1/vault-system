@@ -27,7 +27,7 @@ class KeyDerivationService
             $salt,
             $iterations,
             self::KEY_LENGTH,
-            false // return as binary string, we'll encode if needed
+            true // return binary string for AES key
         );
     }
 
