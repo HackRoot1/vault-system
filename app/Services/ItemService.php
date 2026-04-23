@@ -46,15 +46,11 @@ class ItemService
 
     public function createItem(int $vaultId, array $data): Item
     {
-        $encryption = $this->getEncryptionService();
-        $dataJson = json_encode($data['data']);
-        $encrypted = $encryption->encrypt($dataJson);
-
         $itemData = [
             'type' => $data['type'],
-            'encrypted_data' => $encrypted['encrypted_data'],
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
+            'encrypted_data' => $data['encrypted_data'],
+            'iv' => $data['iv'],
+            'tag' => $data['tag'],
         ];
 
         return $this->itemRepository->createForVault($vaultId, $itemData);
@@ -62,15 +58,11 @@ class ItemService
 
     public function updateItem(int $vaultId, int $itemId, array $data): bool
     {
-        $encryption = $this->getEncryptionService();
-        $dataJson = json_encode($data['data']);
-        $encrypted = $encryption->encrypt($dataJson);
-
         $itemData = [
             'type' => $data['type'],
-            'encrypted_data' => $encrypted['encrypted_data'],
-            'iv' => $encrypted['iv'],
-            'tag' => $encrypted['tag'],
+            'encrypted_data' => $data['encrypted_data'],
+            'iv' => $data['iv'],
+            'tag' => $data['tag'],
         ];
 
         return $this->itemRepository->updateVaultItem($vaultId, $itemId, $itemData);

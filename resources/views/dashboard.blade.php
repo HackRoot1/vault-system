@@ -92,17 +92,22 @@
             </div>
             <div class="modal-body">
                 <form id="createItemForm">
+                    <input type="hidden" name="type" value="login">
                     <div class="mb-3">
-                        <label for="itemType" class="form-label">Item Type</label>
-                        <select class="form-control" id="itemType" name="type" required>
-                            <option value="login">Login</option>
-                            <option value="credit_card">Credit Card</option>
-                            <option value="note">Note</option>
-                        </select>
+                        <label for="itemTitle" class="form-label">Title</label>
+                        <input type="text" class="form-control" id="itemTitle" name="title" placeholder="GitHub" required>
                     </div>
                     <div class="mb-3">
-                        <label for="itemData" class="form-label">Item Data (JSON)</label>
-                        <textarea class="form-control" id="itemData" name="data" rows="5" placeholder='{"username": "example", "password": "secret"}' required></textarea>
+                        <label for="itemUsername" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="itemUsername" name="username" placeholder="octocat" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="itemPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="itemPassword" name="password" placeholder="Enter password" required>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Final API Payload</label>
+                        <pre id="itemPayloadPreview" class="bg-light border rounded p-3 small mb-0">Encrypted payload will appear here before submit.</pre>
                     </div>
                 </form>
             </div>
@@ -134,6 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Logout functionality
     document.getElementById('logoutBtn').addEventListener('click', function() {
         localStorage.removeItem('api_token');
+        window.vaultCrypto.clearMemoryKey();
         window.location.href = '{{ route("login") }}';
     });
 
@@ -258,29 +264,44 @@ async function createItem() {
         return;
     }
 
+    if (!window.vaultCryptoSession.encryptionKey) {
+        showAlert('Your encryption key is not in memory. Please log in again before adding items.', 'danger');
+        return;
+    }
+
     const form = document.getElementById('createItemForm');
+    const payloadPreview = document.getElementById('itemPayloadPreview');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
 
     try {
-        // Parse JSON data
-        data.data = JSON.parse(data.data);
-    } catch (e) {
-        showAlert('Invalid JSON data', 'danger');
-        return;
-    }
+        const vaultItem = {
+            title: data.title,
+            username: data.username,
+            password: data.password,
+        };
 
-    try {
-        const response = await axios.post(`/api/vaults/${currentVaultId}/items`, data);
+        const encryptedPayload = await window.vaultCrypto.encryptVaultItem(vaultItem);
+        const apiPayload = {
+            type: data.type,
+            encrypted_data: encryptedPayload.encrypted_data,
+            iv: encryptedPayload.iv,
+            tag: encryptedPayload.tag,
+        };
+
+        payloadPreview.textContent = JSON.stringify(apiPayload, null, 2);
+
+        const response = await axios.post(`/api/vaults/${currentVaultId}/items`, apiPayload);
 
         if (response.data.success) {
             showAlert('Item created successfully!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createItemModal')).hide();
             form.reset();
+            payloadPreview.textContent = JSON.stringify(apiPayload, null, 2);
             loadVaultItems(currentVaultId);
         }
     } catch (error) {
-        const message = error.response?.data?.message || 'Failed to create item';
+        const message = error.response?.data?.message || error.message || 'Failed to create item';
         showAlert(message, 'danger');
     }
 }

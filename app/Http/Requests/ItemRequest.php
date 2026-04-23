@@ -23,8 +23,10 @@ class ItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => 'required|in:login,note',
-            'data' => 'required|array',
+            'type' => 'required|in:login,note,credit_card',
+            'encrypted_data' => 'required|string',
+            'iv' => 'required|string',
+            'tag' => 'required|string',
         ];
     }
 }

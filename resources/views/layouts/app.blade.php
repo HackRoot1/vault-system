@@ -84,6 +84,17 @@
                 return localStorage.getItem(this.getSaltStorageKey(email));
             },
 
+            arrayBufferToBase64(buffer) {
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+
+                bytes.forEach(byte => {
+                    binary += String.fromCharCode(byte);
+                });
+
+                return btoa(binary);
+            },
+
             async deriveAesKey(password, saltHex, iterations = this.iterations) {
                 const passwordBytes = this.passwordToUint8Array(password);
                 const saltBytes = this.hexToUint8Array(saltHex);
@@ -123,6 +134,37 @@
                 window.vaultCryptoSession.email = String(email).trim().toLowerCase();
 
                 return key;
+            },
+
+            async encryptVaultItem(item) {
+                const key = window.vaultCryptoSession.encryptionKey;
+
+                if (!key) {
+                    throw new Error('Encryption key is not available in memory. Please log in again.');
+                }
+
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const plaintext = new TextEncoder().encode(JSON.stringify(item));
+                const encryptedBuffer = await crypto.subtle.encrypt(
+                    {
+                        name: 'AES-GCM',
+                        iv,
+                        tagLength: 128,
+                    },
+                    key,
+                    plaintext
+                );
+
+                const encryptedBytes = new Uint8Array(encryptedBuffer);
+                const tagLength = 16;
+                const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - tagLength);
+                const tag = encryptedBytes.slice(encryptedBytes.length - tagLength);
+
+                return {
+                    encrypted_data: this.arrayBufferToBase64(ciphertext),
+                    iv: this.arrayBufferToBase64(iv),
+                    tag: this.arrayBufferToBase64(tag),
+                };
             },
 
             clearMemoryKey() {
