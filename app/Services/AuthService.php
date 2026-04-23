@@ -58,6 +58,10 @@ class AuthService
         return [
             'user' => $user,
             'token' => $token,
+            'crypto' => [
+                'salt' => $user->encryption_salt,
+                'iterations' => $user->key_iterations,
+            ],
         ];
     }
 
@@ -108,6 +112,10 @@ class AuthService
         return [
             'user' => $user,
             'token' => $token,
+            'crypto' => [
+                'salt' => $user->encryption_salt,
+                'iterations' => $user->key_iterations,
+            ],
         ];
     }
 

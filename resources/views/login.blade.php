@@ -58,15 +58,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
             const response = await axios.post('/api/login', data);
+            const payload = response.data.data;
 
             if (response.data.success) {
-                if (response.data.requires_2fa) {
+                if (payload?.requires_2fa) {
                     // Show 2FA input
                     twoFactorSection.style.display = 'block';
                     showAlert('Please enter your 2FA code', 'info');
                 } else {
                     // Login successful
-                    localStorage.setItem('api_token', response.data.token);
+                    localStorage.setItem('api_token', payload.token);
+                    window.axios.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
+
+                    const salt = payload.crypto?.salt || window.vaultCrypto.getStoredSalt(data.email);
+                    const iterations = payload.crypto?.iterations || 100000;
+
+                    if (!salt) {
+                        throw new Error('Missing encryption salt for key derivation.');
+                    }
+
+                    await window.vaultCrypto.deriveAndStoreKey(
+                        data.password,
+                        data.email,
+                        salt,
+                        iterations
+                    );
+
                     showAlert('Login successful!', 'success');
                     setTimeout(() => {
                         window.location.href = '{{ route("dashboard") }}';

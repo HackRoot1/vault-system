@@ -67,9 +67,19 @@
 
             try {
                 const response = await axios.post('/api/register', data);
+                const payload = response.data.data;
 
                 if (response.data.success) {
-                    localStorage.setItem('api_token', response.data.token);
+                    localStorage.setItem('api_token', payload.token);
+                    window.axios.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
+
+                    await window.vaultCrypto.deriveAndStoreKey(
+                        data.password,
+                        data.email,
+                        payload.crypto.salt,
+                        payload.crypto.iterations || 100000
+                    );
+
                     showAlert('Registration successful!', 'success');
                     setTimeout(() => {
                         window.location.href = '{{ route("dashboard") }}';

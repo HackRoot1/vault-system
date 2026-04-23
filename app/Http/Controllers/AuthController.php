@@ -27,6 +27,7 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => $result['user'],
             'token' => $result['token'],
+            'crypto' => $result['crypto'],
         ], 'User registered successfully', 201);
     }
 
@@ -49,6 +50,7 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => $result['user'],
             'token' => $result['token'],
+            'crypto' => $result['crypto'],
         ], 'Login successful');
     }
 

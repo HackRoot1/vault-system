@@ -44,6 +44,94 @@
     <script>
         window.axios = axios;
         window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+        window.vaultCryptoSession = {
+            encryptionKey: null,
+            salt: null,
+            iterations: 100000,
+            email: null,
+        };
+
+        window.vaultCrypto = {
+            iterations: 100000,
+
+            passwordToUint8Array(password) {
+                return new TextEncoder().encode(password);
+            },
+
+            hexToUint8Array(hex) {
+                if (!hex || hex.length % 2 !== 0) {
+                    throw new Error('Salt must be a valid hex string.');
+                }
+
+                const bytes = new Uint8Array(hex.length / 2);
+
+                for (let i = 0; i < hex.length; i += 2) {
+                    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+                }
+
+                return bytes;
+            },
+
+            getSaltStorageKey(email) {
+                return `vault_crypto_salt:${String(email).trim().toLowerCase()}`;
+            },
+
+            storeSalt(email, salt) {
+                localStorage.setItem(this.getSaltStorageKey(email), salt);
+            },
+
+            getStoredSalt(email) {
+                return localStorage.getItem(this.getSaltStorageKey(email));
+            },
+
+            async deriveAesKey(password, saltHex, iterations = this.iterations) {
+                const passwordBytes = this.passwordToUint8Array(password);
+                const saltBytes = this.hexToUint8Array(saltHex);
+
+                const baseKey = await crypto.subtle.importKey(
+                    'raw',
+                    passwordBytes,
+                    'PBKDF2',
+                    false,
+                    ['deriveKey']
+                );
+
+                return crypto.subtle.deriveKey(
+                    {
+                        name: 'PBKDF2',
+                        salt: saltBytes,
+                        iterations,
+                        hash: 'SHA-256',
+                    },
+                    baseKey,
+                    {
+                        name: 'AES-GCM',
+                        length: 256,
+                    },
+                    false,
+                    ['encrypt', 'decrypt']
+                );
+            },
+
+            async deriveAndStoreKey(password, email, saltHex, iterations = this.iterations) {
+                const key = await this.deriveAesKey(password, saltHex, iterations);
+
+                this.storeSalt(email, saltHex);
+                window.vaultCryptoSession.encryptionKey = key;
+                window.vaultCryptoSession.salt = saltHex;
+                window.vaultCryptoSession.iterations = iterations;
+                window.vaultCryptoSession.email = String(email).trim().toLowerCase();
+
+                return key;
+            },
+
+            clearMemoryKey() {
+                window.vaultCryptoSession.encryptionKey = null;
+                window.vaultCryptoSession.salt = null;
+                window.vaultCryptoSession.iterations = this.iterations;
+                window.vaultCryptoSession.email = null;
+            },
+        };
 
         // Set up axios interceptor to include Authorization header
         const token = localStorage.getItem('api_token');
@@ -58,6 +146,7 @@
                 if (error.response?.status === 401) {
                     // Token expired or invalid
                     localStorage.removeItem('api_token');
+                    window.vaultCrypto.clearMemoryKey();
                     if (window.location.pathname !== '/login') {
                         window.location.href = '/login';
                     }
