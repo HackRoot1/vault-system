@@ -21,6 +21,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+    // Two-factor authentication routes
+    Route::post('/2fa/setup', [AuthController::class, 'setup2FA']);
+    Route::post('/2fa/verify', [AuthController::class, 'verify2FA']);
+    Route::post('/2fa/disable', [AuthController::class, 'disable2FA']);
+    Route::get('/devices', [AuthController::class, 'getDeviceHistory']);
+
     Route::get('/items/sync', [ItemController::class, 'sync']);
     Route::apiResource('vaults', VaultController::class);
     Route::apiResource('vaults.items', ItemController::class);

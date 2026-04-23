@@ -25,6 +25,12 @@ class User extends Authenticatable
         'password',
         'encryption_salt',
         'key_iterations',
+        'two_factor_secret',
+        'two_factor_enabled',
+        'device_history',
+        'last_login_at',
+        'last_login_ip',
+        'last_login_user_agent',
     ];
 
     /**
@@ -47,6 +53,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_enabled' => 'boolean',
+            'device_history' => 'array',
+            'last_login_at' => 'datetime',
         ];
     }
 
