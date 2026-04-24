@@ -45,8 +45,8 @@ class AuthService
             'key_iterations' => $iterations,
         ]);
 
-        $key = $this->keyDerivationService->deriveKey($data['password'], $salt, $iterations);
-        EncryptionHelper::setUserKey($user->id, $data['password'], $salt, $iterations);
+        $key = $this->keyDerivationService->deriveKey($data['master_password'], $salt, $iterations);
+        EncryptionHelper::setUserKey($user->id, $data['master_password'], $salt, $iterations);
 
         $tokenResult = $user->createToken('API Token');
         EncryptionHelper::setUserKeyForToken($tokenResult->accessToken->id, $key);

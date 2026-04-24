@@ -51,6 +51,17 @@
             email: null,
         };
 
+        // Load session from storage
+        (async () => {
+            const session = await window.vaultCrypto.loadSessionFromStorage();
+            if (session) {
+                window.vaultCryptoSession.encryptionKey = session.key;
+                window.vaultCryptoSession.email = session.email;
+                window.vaultCryptoSession.salt = session.salt;
+                window.vaultCryptoSession.iterations = session.iterations;
+            }
+        })();
+
         window.vaultCrypto = {
             iterations: 100000,
 
@@ -106,6 +117,29 @@
                 return bytes;
             },
 
+            async storeKeyInSession(masterPassword, email, salt, iterations) {
+                const sessionData = {
+                    masterPassword: masterPassword,
+                    email: email,
+                    salt: salt,
+                    iterations: iterations
+                };
+                sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
+            },
+
+            async loadSessionFromStorage() {
+                const dataStr = sessionStorage.getItem('vault_session');
+                if (!dataStr) return null;
+                const data = JSON.parse(dataStr);
+                const key = await this.deriveAesKey(data.masterPassword, data.salt, data.iterations);
+                return {
+                    key,
+                    email: data.email,
+                    salt: data.salt,
+                    iterations: data.iterations
+                };
+            },
+
             async deriveAesKey(password, saltHex, iterations = this.iterations) {
                 const passwordBytes = this.passwordToUint8Array(password);
                 const saltBytes = this.hexToUint8Array(saltHex);
@@ -130,7 +164,7 @@
                         name: 'AES-GCM',
                         length: 256,
                     },
-                    false,
+                    true,  // extractable
                     ['encrypt', 'decrypt']
                 );
             },
@@ -143,6 +177,8 @@
                 window.vaultCryptoSession.salt = saltHex;
                 window.vaultCryptoSession.iterations = iterations;
                 window.vaultCryptoSession.email = String(email).trim().toLowerCase();
+
+                await this.storeKeyInSession(password, window.vaultCryptoSession.email, saltHex, iterations);
 
                 return key;
             },
@@ -217,6 +253,7 @@
                 window.vaultCryptoSession.salt = null;
                 window.vaultCryptoSession.iterations = this.iterations;
                 window.vaultCryptoSession.email = null;
+                sessionStorage.removeItem('vault_session');
             },
         };
 
@@ -263,31 +300,30 @@
 
         // Session timeout management
         let sessionTimeout = 30 * 60 * 1000; // 30 minutes in milliseconds
-        let lastActivity = Date.now();
+        let timeoutId;
 
         function resetSessionTimeout() {
-            lastActivity = Date.now();
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(checkSessionTimeout, sessionTimeout);
         }
 
         function checkSessionTimeout() {
-            if (Date.now() - lastActivity > sessionTimeout) {
-                // Session expired due to inactivity
-                localStorage.removeItem('api_token');
-                window.vaultCrypto.clearMemoryKey();
-                showAlert('Your session has expired due to inactivity. Please log in again.', 'warning');
-                setTimeout(() => {
-                    window.location.href = '/login';
-                }, 3000);
-            }
+            // Session expired due to inactivity
+            localStorage.removeItem('api_token');
+            window.vaultCrypto.clearMemoryKey();
+            showAlert('Your session has expired due to inactivity. Please log in again.', 'warning');
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 3000);
         }
 
         // Track user activity
-        ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(event => {
-            document.addEventListener(event, resetSessionTimeout, true);
+        ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'].forEach(event => {
+            document.addEventListener(event, resetSessionTimeout, false);
         });
 
-        // Check session timeout every minute
-        setInterval(checkSessionTimeout, 60 * 1000);
+        // Start the timeout
+        resetSessionTimeout();
     </script>
 
     @stack('scripts')

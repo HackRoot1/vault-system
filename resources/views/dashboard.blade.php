@@ -123,11 +123,31 @@
 <script>
 let currentVaultId = null;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     // Check if user is authenticated
     const token = localStorage.getItem('api_token');
     if (!token) {
         window.location.href = '{{ route("login") }}';
+        return;
+    }
+
+    // Load session from storage first
+    await (async () => {
+        const session = await window.vaultCrypto.loadSessionFromStorage();
+        if (session) {
+            window.vaultCryptoSession.encryptionKey = session.key;
+            window.vaultCryptoSession.email = session.email;
+            window.vaultCryptoSession.salt = session.salt;
+            window.vaultCryptoSession.iterations = session.iterations;
+        }
+    })();
+
+    // Check if encryption key is available
+    if (!window.vaultCryptoSession.encryptionKey) {
+        showAlert('Your session has expired. Please log in again.', 'danger');
+        setTimeout(() => {
+            window.location.href = '{{ route("login") }}';
+        }, 2000);
         return;
     }
 

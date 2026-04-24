@@ -10,11 +10,14 @@ class RegisterDTO
 
     public string $password;
 
+    public string $master_password;
+
     public function __construct(array $data)
     {
         $this->name = $data['name'];
         $this->email = $data['email'];
         $this->password = $data['password'];
+        $this->master_password = $data['master_password'];
     }
 
     public function toArray(): array
@@ -23,6 +26,7 @@ class RegisterDTO
             'name' => $this->name,
             'email' => $this->email,
             'password' => $this->password,
+            'master_password' => $this->master_password,
         ];
     }
 }

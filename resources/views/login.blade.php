@@ -67,101 +67,101 @@
 
 @push('scripts')
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const loginForm = document.getElementById('loginForm');
-    const loginBtn = document.getElementById('loginBtn');
-    const spinner = loginBtn.querySelector('.spinner-border');
-    const twoFactorSection = document.getElementById('twoFactorSection');
-    const masterPasswordModal = new bootstrap.Modal(document.getElementById('masterPasswordModal'));
-    const masterPasswordForm = document.getElementById('masterPasswordForm');
-    const unlockBtn = document.getElementById('unlockBtn');
-    const unlockSpinner = unlockBtn.querySelector('.spinner-border');
+    document.addEventListener('DOMContentLoaded', function() {
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn = document.getElementById('loginBtn');
+        const spinner = loginBtn.querySelector('.spinner-border');
+        const twoFactorSection = document.getElementById('twoFactorSection');
+        const masterPasswordModal = new bootstrap.Modal(document.getElementById('masterPasswordModal'));
+        const masterPasswordForm = document.getElementById('masterPasswordForm');
+        const unlockBtn = document.getElementById('unlockBtn');
+        const unlockSpinner = unlockBtn.querySelector('.spinner-border');
 
-    let loginData = null;
-    let loginPayload = null;
+        let loginData = null;
+        let loginPayload = null;
 
-    loginForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
 
-        const formData = new FormData(loginForm);
-        const data = Object.fromEntries(formData);
+            const formData = new FormData(loginForm);
+            const data = Object.fromEntries(formData);
 
-        // Show loading
-        loginBtn.disabled = true;
-        spinner.classList.remove('d-none');
-        const loginBtnText = document.getElementById('loginBtnText');
-        loginBtnText.textContent = twoFactorSection.style.display === 'block' ? 'Verify 2FA' : 'Login';
+            // Show loading
+            loginBtn.disabled = true;
+            spinner.classList.remove('d-none');
+            const loginBtnText = document.getElementById('loginBtnText');
+            loginBtnText.textContent = twoFactorSection.style.display === 'block' ? 'Verify 2FA' : 'Login';
 
-        try {
-            const response = await axios.post('/api/login', data);
-            const payload = response.data.data;
+            try {
+                const response = await axios.post('/api/login', data);
+                const payload = response.data.data;
 
-            if (response.data.success) {
-                if (payload?.requires_2fa) {
-                    // Show 2FA input
+                if (response.data.success) {
+                    if (payload?.requires_2fa) {
+                        // Show 2FA input
+                        twoFactorSection.style.display = 'block';
+                        loginBtnText.textContent = 'Verify 2FA';
+                        showAlert('Please enter your 2FA code', 'info');
+                    } else {
+                        // Store login data and show master password modal
+                        loginData = data;
+                        loginPayload = payload;
+                        localStorage.setItem('api_token', payload.token);
+                        window.axios.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
+                        masterPasswordModal.show();
+                    }
+                }
+            } catch (error) {
+                const message = error.response?.data?.message || 'Login failed';
+                showAlert(message, 'danger');
+
+                if (error.response?.data?.requires_2fa) {
                     twoFactorSection.style.display = 'block';
                     loginBtnText.textContent = 'Verify 2FA';
-                    showAlert('Please enter your 2FA code', 'info');
-                } else {
-                    // Store login data and show master password modal
-                    loginData = data;
-                    loginPayload = payload;
-                    localStorage.setItem('api_token', payload.token);
-                    window.axios.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
-                    masterPasswordModal.show();
                 }
+            } finally {
+                loginBtn.disabled = false;
+                spinner.classList.add('d-none');
             }
-        } catch (error) {
-            const message = error.response?.data?.message || 'Login failed';
-            showAlert(message, 'danger');
+        });
 
-            if (error.response?.data?.requires_2fa) {
-                twoFactorSection.style.display = 'block';
-                loginBtnText.textContent = 'Verify 2FA';
+        // Handle master password form
+        masterPasswordForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const masterPassword = document.getElementById('masterPassword').value;
+
+            unlockBtn.disabled = true;
+            unlockSpinner.classList.remove('d-none');
+
+            try {
+                const salt = loginPayload.crypto?.salt || window.vaultCrypto.getStoredSalt(loginData.email);
+                const iterations = loginPayload.crypto?.iterations || 100000;
+
+                if (!salt) {
+                    throw new Error('Missing encryption salt for key derivation.');
+                }
+
+                await window.vaultCrypto.deriveAndStoreKey(
+                    masterPassword,
+                    loginData.email,
+                    salt,
+                    iterations
+                );
+
+                masterPasswordModal.hide();
+                showAlert('Login successful!', 'success');
+                setTimeout(() => {
+                    window.location.href = '{{ route("dashboard") }}';
+                }, 1000);
+            } catch (error) {
+                showAlert('Failed to unlock vault: ' + error.message, 'danger');
+            } finally {
+                unlockBtn.disabled = false;
+                unlockSpinner.classList.add('d-none');
             }
-        } finally {
-            loginBtn.disabled = false;
-            spinner.classList.add('d-none');
-        }
+        });
     });
-
-    // Handle master password form
-    masterPasswordForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-
-        const masterPassword = document.getElementById('masterPassword').value;
-
-        unlockBtn.disabled = true;
-        unlockSpinner.classList.remove('d-none');
-
-        try {
-            const salt = loginPayload.crypto?.salt || window.vaultCrypto.getStoredSalt(loginData.email);
-            const iterations = loginPayload.crypto?.iterations || 100000;
-
-            if (!salt) {
-                throw new Error('Missing encryption salt for key derivation.');
-            }
-
-            await window.vaultCrypto.deriveAndStoreKey(
-                masterPassword,
-                loginData.email,
-                salt,
-                iterations
-            );
-
-            masterPasswordModal.hide();
-            showAlert('Login successful!', 'success');
-            setTimeout(() => {
-                window.location.href = '{{ route("dashboard") }}';
-            }, 1000);
-        } catch (error) {
-            showAlert('Failed to unlock vault: ' + error.message, 'danger');
-        } finally {
-            unlockBtn.disabled = false;
-            unlockSpinner.classList.add('d-none');
-        }
-    });
-});
 </script>
 @endpush
 @endsection

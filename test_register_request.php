@@ -5,6 +5,8 @@ $payload = json_encode([
     'email' => 'john@example.com',
     'password' => 'MySecure@Pass123',
     'password_confirmation' => 'MySecure@Pass123',
+    'master_password' => 'MyMaster@Pass123',
+    'master_password_confirmation' => 'MyMaster@Pass123',
 ]);
 $opts = [
     'http' => [
