@@ -18,6 +18,8 @@ class FileItemResource extends JsonResource
             'id' => $this->id,
             'vault_id' => $this->vault_id,
             'file_name' => $this->file_name,
+            'iv' => $this->iv,
+            'tag' => $this->tag,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -23,7 +23,10 @@ class FileItemRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,gif,svg,doc,docx,txt|max:10240',
+            'file' => 'required|file|max:51200',
+            'file_name' => 'required|string|max:255',
+            'iv' => 'required|string',
+            'tag' => 'required|string',
         ];
     }
 }

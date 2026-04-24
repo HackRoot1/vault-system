@@ -51,17 +51,6 @@
             email: null,
         };
 
-        // Load session from storage
-        (async () => {
-            const session = await window.vaultCrypto.loadSessionFromStorage();
-            if (session) {
-                window.vaultCryptoSession.encryptionKey = session.key;
-                window.vaultCryptoSession.email = session.email;
-                window.vaultCryptoSession.salt = session.salt;
-                window.vaultCryptoSession.iterations = session.iterations;
-            }
-        })();
-
         window.vaultCrypto = {
             iterations: 100000,
 
@@ -248,6 +237,78 @@
                 }
             },
 
+            readFileAsArrayBuffer(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+                    reader.readAsArrayBuffer(file);
+                });
+            },
+
+            async encryptFile(file) {
+                const key = window.vaultCryptoSession.encryptionKey;
+
+                if (!key) {
+                    throw new Error('Encryption key is not available in memory. Please log in again.');
+                }
+
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const fileBuffer = await this.readFileAsArrayBuffer(file);
+                const encryptedBuffer = await crypto.subtle.encrypt(
+                    {
+                        name: 'AES-GCM',
+                        iv,
+                        tagLength: 128,
+                    },
+                    key,
+                    fileBuffer
+                );
+
+                const encryptedBytes = new Uint8Array(encryptedBuffer);
+                const tagLength = 16;
+                const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - tagLength);
+                const tag = encryptedBytes.slice(encryptedBytes.length - tagLength);
+
+                return {
+                    encryptedBlob: new Blob([ciphertext], { type: 'application/octet-stream' }),
+                    encryptedBuffer: ciphertext.buffer,
+                    fileName: file.name,
+                    mimeType: file.type || 'application/octet-stream',
+                    size: file.size,
+                    iv: this.arrayBufferToBase64(iv),
+                    tag: this.arrayBufferToBase64(tag),
+                };
+            },
+
+            async decryptFile(encryptedBuffer, iv, tag, mimeType = 'application/octet-stream') {
+                const key = window.vaultCryptoSession.encryptionKey;
+
+                if (!key) {
+                    throw new Error('Encryption key is not available in memory. Please log in again.');
+                }
+
+                const ciphertext = new Uint8Array(encryptedBuffer);
+                const tagBytes = this.base64ToUint8Array(tag);
+                const ivBytes = this.base64ToUint8Array(iv);
+                const encryptedBytes = new Uint8Array(ciphertext.length + tagBytes.length);
+
+                encryptedBytes.set(ciphertext, 0);
+                encryptedBytes.set(tagBytes, ciphertext.length);
+
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    {
+                        name: 'AES-GCM',
+                        iv: ivBytes,
+                        tagLength: 128,
+                    },
+                    key,
+                    encryptedBytes
+                );
+
+                return new Blob([decryptedBuffer], { type: mimeType });
+            },
+
             clearMemoryKey() {
                 window.vaultCryptoSession.encryptionKey = null;
                 window.vaultCryptoSession.salt = null;
@@ -256,6 +317,17 @@
                 sessionStorage.removeItem('vault_session');
             },
         };
+
+        // Load session from storage
+        (async () => {
+            const session = await window.vaultCrypto.loadSessionFromStorage();
+            if (session) {
+                window.vaultCryptoSession.encryptionKey = session.key;
+                window.vaultCryptoSession.email = session.email;
+                window.vaultCryptoSession.salt = session.salt;
+                window.vaultCryptoSession.iterations = session.iterations;
+            }
+        })();
 
         // Set up axios interceptor to include Authorization header
         const token = localStorage.getItem('api_token');

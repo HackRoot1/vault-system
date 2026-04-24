@@ -41,7 +41,13 @@ class FileItemController extends Controller
         }
 
         try {
-            $fileItem = $this->fileService->uploadFile($vault->id, $request->file('file'));
+            $fileItem = $this->fileService->uploadFile(
+                $vault->id,
+                $request->file('file'),
+                $request->string('file_name')->toString(),
+                $request->string('iv')->toString(),
+                $request->string('tag')->toString()
+            );
 
             return ApiResponse::success(new FileItemResource($fileItem), 'File uploaded successfully', 201);
         } catch (\Exception $e) {
@@ -67,7 +73,14 @@ class FileItemController extends Controller
         }
 
         try {
-            $updated = $this->fileService->updateFile($vault->id, $file->id, $request->file('file'));
+            $updated = $this->fileService->updateFile(
+                $vault->id,
+                $file->id,
+                $request->file('file'),
+                $request->string('file_name')->toString(),
+                $request->string('iv')->toString(),
+                $request->string('tag')->toString()
+            );
 
             if (! $updated) {
                 return ApiResponse::error('File not found', 404);
@@ -105,9 +118,14 @@ class FileItemController extends Controller
             return ApiResponse::error('Download token invalid or expired.', 404);
         }
 
+        $downloadName = str_replace(['"', "\r", "\n"], '', $result['filename']).'.enc';
+
         return response($result['content'], 200, [
             'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="'.$result['filename'].'"',
+            'Content-Disposition' => 'attachment; filename="'.$downloadName.'"',
+            'X-File-Name' => rawurlencode($result['filename']),
+            'X-File-Iv' => $result['iv'],
+            'X-File-Tag' => $result['tag'],
         ]);
     }
 
