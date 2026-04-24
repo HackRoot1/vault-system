@@ -26,6 +26,15 @@
                             <label for="password_confirmation" class="form-label">Confirm Password</label>
                             <input type="password" class="form-control" id="password_confirmation" name="password_confirmation" required>
                         </div>
+                        <div class="mb-3">
+                            <label for="master_password" class="form-label">Master Password</label>
+                            <input type="password" class="form-control" id="master_password" name="master_password" required minlength="8">
+                            <div class="form-text">This password will be used to encrypt your vault data. Keep it secure and separate from your login password.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="master_password_confirmation" class="form-label">Confirm Master Password</label>
+                            <input type="password" class="form-control" id="master_password_confirmation" name="master_password_confirmation" required>
+                        </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-success" id="registerBtn">
                                 <span class="spinner-border spinner-border-sm d-none" role="status"></span>
@@ -61,6 +70,12 @@
                 return;
             }
 
+            // Validate master passwords match
+            if (data.master_password !== data.master_password_confirmation) {
+                showAlert('Master passwords do not match', 'danger');
+                return;
+            }
+
             // Show loading
             registerBtn.disabled = true;
             spinner.classList.remove('d-none');
@@ -74,7 +89,7 @@
                     window.axios.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
 
                     await window.vaultCrypto.deriveAndStoreKey(
-                        data.password,
+                        data.master_password,
                         data.email,
                         payload.crypto.salt,
                         payload.crypto.iterations || 100000

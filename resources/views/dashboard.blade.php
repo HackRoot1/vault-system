@@ -213,6 +213,14 @@ async function loadVaultItems(vaultId) {
             return;
         }
 
+        if (!window.vaultCryptoSession.encryptionKey) {
+            itemsList.innerHTML = '<p class="text-danger">Your session has expired. Please log in again.</p>';
+            setTimeout(() => {
+                window.location.href = '{{ route("login") }}';
+            }, 2000);
+            return;
+        }
+
         const decryptedItems = await Promise.all(items.map(async item => {
             try {
                 const data = await window.vaultCrypto.decryptVaultItem(item);
@@ -325,7 +333,10 @@ async function createItem() {
     }
 
     if (!window.vaultCryptoSession.encryptionKey) {
-        showAlert('Your encryption key is not in memory. Please log in again before adding items.', 'danger');
+        showAlert('Your session has expired. Please log in again.', 'danger');
+        setTimeout(() => {
+            window.location.href = '{{ route("login") }}';
+        }, 2000);
         return;
     }
 

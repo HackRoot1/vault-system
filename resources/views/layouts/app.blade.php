@@ -260,6 +260,34 @@
                 }
             }, 5000);
         };
+
+        // Session timeout management
+        let sessionTimeout = 30 * 60 * 1000; // 30 minutes in milliseconds
+        let lastActivity = Date.now();
+
+        function resetSessionTimeout() {
+            lastActivity = Date.now();
+        }
+
+        function checkSessionTimeout() {
+            if (Date.now() - lastActivity > sessionTimeout) {
+                // Session expired due to inactivity
+                localStorage.removeItem('api_token');
+                window.vaultCrypto.clearMemoryKey();
+                showAlert('Your session has expired due to inactivity. Please log in again.', 'warning');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 3000);
+            }
+        }
+
+        // Track user activity
+        ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(event => {
+            document.addEventListener(event, resetSessionTimeout, true);
+        });
+
+        // Check session timeout every minute
+        setInterval(checkSessionTimeout, 60 * 1000);
     </script>
 
     @stack('scripts')
