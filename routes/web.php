@@ -15,5 +15,21 @@ Route::get('/register', function () {
 })->name('register');
 
 Route::get('/dashboard', function () {
-    return view('dashboard');
+    return view('dashboard', ['section' => 'dashboard']);
 })->name('dashboard');
+
+Route::get('/vaults', function () {
+    return view('dashboard', ['section' => 'vaults']);
+})->name('vaults');
+
+Route::get('/items', function () {
+    return view('dashboard', ['section' => 'items']);
+})->name('items');
+
+Route::get('/files', function () {
+    return view('dashboard', ['section' => 'files']);
+})->name('files');
+
+Route::get('/settings', function () {
+    return view('dashboard', ['section' => 'settings']);
+})->name('settings');
