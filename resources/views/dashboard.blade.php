@@ -21,6 +21,18 @@
     .vault-meta {
         font-size: .8rem;
     }
+
+    .masked-secret {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        letter-spacing: .08em;
+    }
+
+    .locked-overlay {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: .5rem;
+        padding: 1rem;
+    }
 </style>
 
 <div class="container dashboard-shell">
@@ -35,6 +47,7 @@
                     <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#createVaultModal">
                         Create Vault
                     </button>
+                    <button class="btn btn-outline-secondary me-2" id="lockVaultBtn">Lock Vault</button>
                     <button class="btn btn-outline-danger" id="logoutBtn">Logout</button>
                 </div>
             </div>
@@ -77,10 +90,10 @@
                             <small class="text-muted" id="vaultSubtitle">Items are decrypted locally in your browser.</small>
                         </div>
                         <div>
-                            <button class="btn btn-sm btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
+                            <button class="btn btn-sm btn-outline-primary me-2 requires-unlocked" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
                                 Upload File
                             </button>
-                            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#createItemModal">
+                            <button class="btn btn-sm btn-success requires-unlocked" data-bs-toggle="modal" data-bs-target="#createItemModal">
                                 Add Item
                             </button>
                         </div>
@@ -187,7 +200,10 @@
                     </div>
                     <div class="mb-3">
                         <label for="itemPassword" class="form-label">Secret</label>
-                        <input type="password" class="form-control" id="itemPassword" name="password" placeholder="Password, code, or card data">
+                        <div class="input-group">
+                            <input type="password" class="form-control sensitive-input" id="itemPassword" name="password" placeholder="Password, code, or card data" autocomplete="new-password">
+                            <button class="btn btn-outline-secondary" type="button" id="toggleItemPassword">Show</button>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label for="itemNotes" class="form-label">Notes</label>
@@ -210,10 +226,43 @@
     </div>
 </div>
 
+<!-- Unlock Vault Modal -->
+<div class="modal fade" id="unlockVaultModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Vault Locked</h5>
+            </div>
+            <div class="modal-body">
+                <div class="locked-overlay mb-3">
+                    Sensitive fields are hidden and encryption keys have been removed from memory.
+                </div>
+                <form id="unlockVaultForm">
+                    <div class="mb-3">
+                        <label for="unlockMasterPassword" class="form-label">Master Password</label>
+                        <input type="password" class="form-control sensitive-input" id="unlockMasterPassword" required autocomplete="current-password">
+                    </div>
+                    <div id="unlockError" class="alert alert-danger d-none" role="alert"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="unlockLogoutBtn">Logout</button>
+                <button type="button" class="btn btn-primary" id="unlockVaultBtn">
+                    <span class="btn-label">Unlock</span>
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @push('scripts')
 <script>
 let currentVaultId = null;
 let currentVaultName = null;
+let isVaultLocked = false;
+let unlockModal = null;
+const decryptedItemCache = new Map();
 
 document.addEventListener('DOMContentLoaded', async function() {
     // Check if user is authenticated
@@ -223,9 +272,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
     }
 
+    let loadedSession = null;
+
     // Load session from storage first
     await (async () => {
         const session = await window.vaultCrypto.loadSessionFromStorage();
+        loadedSession = session;
         if (session) {
             window.vaultCryptoSession.encryptionKey = session.key;
             window.vaultCryptoSession.email = session.email;
@@ -234,26 +286,27 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     })();
 
-    // Check if encryption key is available
-    if (!window.vaultCryptoSession.encryptionKey) {
-        showAlert('Your session has expired. Please log in again.', 'danger');
-        setTimeout(() => {
-            window.location.href = '{{ route("login") }}';
-        }, 2000);
-        return;
-    }
-
     // Set up axios with token
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
+    unlockModal = new bootstrap.Modal(document.getElementById('unlockVaultModal'));
+    wireSecurityControls();
+
+    if (!window.vaultCryptoSession.encryptionKey && !loadedSession?.salt) {
+        showAlert('Your vault session has expired. Please log in again.', 'danger');
+        setTimeout(logoutUser, 1500);
+        return;
+    }
+
+    setVaultLocked(!window.vaultCryptoSession.encryptionKey, !window.vaultCryptoSession.encryptionKey);
     loadVaults();
 
     // Logout functionality
     document.getElementById('logoutBtn').addEventListener('click', function() {
-        localStorage.removeItem('api_token');
-        window.vaultCrypto.clearMemoryKey();
-        window.location.href = '{{ route("login") }}';
+        logoutUser();
     });
+
+    document.getElementById('lockVaultBtn').addEventListener('click', lockVaultNow);
 
     // Create vault
     document.getElementById('createVaultBtn').addEventListener('click', createVault);
@@ -264,6 +317,117 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Upload encrypted file
     document.getElementById('uploadFileBtn').addEventListener('click', uploadEncryptedFile);
 });
+
+function wireSecurityControls() {
+    document.querySelectorAll('.sensitive-input').forEach(input => {
+        input.addEventListener('copy', event => event.preventDefault());
+        input.addEventListener('cut', event => event.preventDefault());
+        input.addEventListener('paste', event => event.preventDefault());
+    });
+
+    document.getElementById('toggleItemPassword').addEventListener('click', function() {
+        const input = document.getElementById('itemPassword');
+        const shouldShow = input.type === 'password';
+
+        input.type = shouldShow ? 'text' : 'password';
+        this.textContent = shouldShow ? 'Hide' : 'Show';
+    });
+
+    document.getElementById('unlockVaultBtn').addEventListener('click', unlockVault);
+    document.getElementById('unlockVaultForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        unlockVault();
+    });
+    document.getElementById('unlockLogoutBtn').addEventListener('click', logoutUser);
+}
+
+window.handleVaultAutoLock = function() {
+    if (window.location.pathname === '/dashboard' || document.getElementById('unlockVaultModal')) {
+        if (isVaultLocked) {
+            return;
+        }
+
+        lockVaultNow(true);
+        return;
+    }
+
+    localStorage.removeItem('api_token');
+    window.vaultCrypto.clearMemoryKey();
+    window.location.href = '/login';
+};
+
+function setVaultLocked(locked, showModal = true) {
+    isVaultLocked = locked;
+    document.querySelectorAll('.requires-unlocked').forEach(element => {
+        element.disabled = locked;
+    });
+    document.querySelectorAll('[data-secret-toggle]').forEach(element => {
+        element.disabled = locked;
+    });
+
+    document.getElementById('lockVaultBtn').disabled = locked;
+    maskAllVisibleSecrets();
+
+    if (locked && showModal && unlockModal) {
+        unlockModal.show();
+    }
+}
+
+function lockVaultNow(isAutomatic = false) {
+    window.vaultCrypto.lockVault();
+    decryptedItemCache.clear();
+    setVaultLocked(true);
+
+    if (currentVaultId) {
+        document.getElementById('itemsList').innerHTML = renderEmptyState('Vault locked. Unlock to decrypt items.');
+    }
+
+    showAlert(isAutomatic ? 'Vault locked after inactivity.' : 'Vault locked.', 'warning');
+}
+
+async function unlockVault() {
+    const button = document.getElementById('unlockVaultBtn');
+    const passwordInput = document.getElementById('unlockMasterPassword');
+    const unlockError = document.getElementById('unlockError');
+    const session = await window.vaultCrypto.loadSessionFromStorage();
+
+    setInlineError(unlockError, null);
+
+    if (!session?.email || !session?.salt) {
+        setInlineError(unlockError, 'Unlock metadata is missing. Please log in again.');
+        return;
+    }
+
+    setButtonLoading(button, true, 'Unlocking...');
+
+    try {
+        await window.vaultCrypto.deriveAndStoreKey(
+            passwordInput.value,
+            session.email,
+            session.salt,
+            session.iterations || window.vaultCrypto.iterations
+        );
+
+        passwordInput.value = '';
+        unlockModal.hide();
+        setVaultLocked(false, false);
+        showAlert('Vault unlocked.', 'success');
+
+        if (currentVaultId) {
+            loadVaultItems(currentVaultId);
+        }
+    } catch (error) {
+        setInlineError(unlockError, 'Unable to unlock vault. Check your master password.');
+    } finally {
+        setButtonLoading(button, false);
+    }
+}
+
+function logoutUser() {
+    localStorage.removeItem('api_token');
+    window.vaultCrypto.clearMemoryKey();
+    window.location.href = '{{ route("login") }}';
+}
 
 async function loadVaults() {
     const vaultsList = document.getElementById('vaultsList');
@@ -332,6 +496,14 @@ async function loadVaultItems(vaultId) {
     itemsList.innerHTML = renderLoadingState('Loading and decrypting vault items...');
     setActiveVaultButton(vaultId);
 
+    if (isVaultLocked || !window.vaultCryptoSession.encryptionKey) {
+        itemsList.innerHTML = renderEmptyState('Vault locked. Unlock to decrypt items.');
+        if (unlockModal) {
+            unlockModal.show();
+        }
+        return;
+    }
+
     try {
         const [vaultResponse, itemsResponse, filesResponse] = await Promise.all([
             axios.get(`/api/vaults/${vaultId}`),
@@ -346,17 +518,10 @@ async function loadVaultItems(vaultId) {
         vaultTitle.textContent = vault.name;
         vaultSubtitle.textContent = `${items.length} item${items.length === 1 ? '' : 's'} and ${files.length} file${files.length === 1 ? '' : 's'}`;
 
-        if (!window.vaultCryptoSession.encryptionKey) {
-            itemsList.innerHTML = renderEmptyState('Your session has expired. Please log in again.');
-            setTimeout(() => {
-                window.location.href = '{{ route("login") }}';
-            }, 2000);
-            return;
-        }
-
         const decryptedItems = await Promise.all(items.map(async item => {
             try {
                 const data = await window.vaultCrypto.decryptVaultItem(item);
+                decryptedItemCache.set(String(item.id), data);
 
                 return {
                     ...item,
@@ -457,6 +622,19 @@ function renderFileRow(file) {
     `;
 }
 
+function requireUnlocked() {
+    if (!isVaultLocked && window.vaultCryptoSession.encryptionKey) {
+        return true;
+    }
+
+    showAlert('Unlock the vault before using encrypted data.', 'warning');
+    if (unlockModal) {
+        unlockModal.show();
+    }
+
+    return false;
+}
+
 function renderLoadingState(message) {
     return `
         <div class="state-box text-muted">
@@ -543,6 +721,49 @@ function setPlainButtonLoading(button, isLoading, loadingText = 'Working...') {
     button.textContent = isLoading ? loadingText : button.dataset.originalLabel;
 }
 
+function maskValue(value) {
+    const normalized = String(value || '');
+
+    if (!normalized) {
+        return '';
+    }
+
+    return '•'.repeat(Math.min(Math.max(normalized.length, 8), 16));
+}
+
+function maskAllVisibleSecrets() {
+    document.querySelectorAll('[data-sensitive-item-id]').forEach(element => {
+        const field = element.dataset.sensitiveField;
+        const item = decryptedItemCache.get(element.dataset.sensitiveItemId);
+        element.textContent = maskValue(item?.[field]);
+        element.classList.add('masked-secret');
+    });
+
+    document.querySelectorAll('[data-secret-toggle]').forEach(button => {
+        button.textContent = 'Show';
+        button.dataset.revealed = 'false';
+    });
+}
+
+function toggleSensitiveField(itemId, field, button) {
+    if (!requireUnlocked()) {
+        return;
+    }
+
+    const item = decryptedItemCache.get(String(itemId));
+    const valueElement = document.querySelector(`[data-sensitive-item-id="${itemId}"][data-sensitive-field="${field}"]`);
+
+    if (!item || !valueElement) {
+        return;
+    }
+
+    const shouldReveal = button.dataset.revealed !== 'true';
+    valueElement.textContent = shouldReveal ? (item[field] || '') : maskValue(item[field]);
+    valueElement.classList.toggle('masked-secret', !shouldReveal);
+    button.textContent = shouldReveal ? 'Hide' : 'Show';
+    button.dataset.revealed = shouldReveal ? 'true' : 'false';
+}
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -572,8 +793,14 @@ function renderItemRow(item) {
         <tr>
             <td>${escapeHtml(item.data?.title)}</td>
             <td>${escapeHtml(item.data?.username)}</td>
-            <td><code>${escapeHtml(item.data?.password)}</code></td>
-            <td>${escapeHtml(item.data?.notes)}</td>
+            <td>
+                <code class="masked-secret" data-sensitive-item-id="${item.id}" data-sensitive-field="password">${escapeHtml(maskValue(item.data?.password))}</code>
+                <button class="btn btn-sm btn-outline-secondary ms-2" data-secret-toggle data-revealed="false" onclick="toggleSensitiveField(${item.id}, 'password', this)">Show</button>
+            </td>
+            <td>
+                <span class="masked-secret" data-sensitive-item-id="${item.id}" data-sensitive-field="notes">${escapeHtml(maskValue(item.data?.notes))}</span>
+                <button class="btn btn-sm btn-outline-secondary ms-2" data-secret-toggle data-revealed="false" onclick="toggleSensitiveField(${item.id}, 'notes', this)">Show</button>
+            </td>
             <td>${escapeHtml(item.type)}</td>
             <td><span class="badge text-bg-success">Decrypted</span></td>
             <td>${createdAt}</td>
@@ -615,11 +842,7 @@ async function createItem() {
         return;
     }
 
-    if (!window.vaultCryptoSession.encryptionKey) {
-        showAlert('Your session has expired. Please log in again.', 'danger');
-        setTimeout(() => {
-            window.location.href = '{{ route("login") }}';
-        }, 2000);
+    if (!requireUnlocked()) {
         return;
     }
 
@@ -672,11 +895,7 @@ async function uploadEncryptedFile() {
         return;
     }
 
-    if (!window.vaultCryptoSession.encryptionKey) {
-        showAlert('Your session has expired. Please log in again.', 'danger');
-        setTimeout(() => {
-            window.location.href = '{{ route("login") }}';
-        }, 2000);
+    if (!requireUnlocked()) {
         return;
     }
 
@@ -732,11 +951,7 @@ async function uploadEncryptedFile() {
 }
 
 async function downloadEncryptedFile(fileId, button = null) {
-    if (!window.vaultCryptoSession.encryptionKey) {
-        showAlert('Your session has expired. Please log in again.', 'danger');
-        setTimeout(() => {
-            window.location.href = '{{ route("login") }}';
-        }, 2000);
+    if (!requireUnlocked()) {
         return;
     }
 

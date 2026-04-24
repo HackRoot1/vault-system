@@ -95,6 +95,19 @@
                 return btoa(binary);
             },
 
+            async importRawAesKey(base64Key) {
+                return crypto.subtle.importKey(
+                    'raw',
+                    this.base64ToUint8Array(base64Key),
+                    {
+                        name: 'AES-GCM',
+                        length: 256,
+                    },
+                    true,
+                    ['encrypt', 'decrypt']
+                );
+            },
+
             base64ToUint8Array(base64) {
                 const binary = atob(base64);
                 const bytes = new Uint8Array(binary.length);
@@ -107,11 +120,16 @@
             },
 
             async storeKeyInSession(masterPassword, email, salt, iterations) {
+                if (!window.vaultCryptoSession.encryptionKey) {
+                    throw new Error('No key is available to store for this session.');
+                }
+
+                const rawKey = await crypto.subtle.exportKey('raw', window.vaultCryptoSession.encryptionKey);
                 const sessionData = {
-                    masterPassword: masterPassword,
                     email: email,
                     salt: salt,
-                    iterations: iterations
+                    iterations: iterations,
+                    rawKey: this.arrayBufferToBase64(rawKey),
                 };
                 sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
             },
@@ -120,7 +138,17 @@
                 const dataStr = sessionStorage.getItem('vault_session');
                 if (!dataStr) return null;
                 const data = JSON.parse(dataStr);
-                const key = await this.deriveAesKey(data.masterPassword, data.salt, data.iterations);
+
+                if (!data.rawKey) {
+                    return {
+                        key: null,
+                        email: data.email,
+                        salt: data.salt,
+                        iterations: data.iterations
+                    };
+                }
+
+                const key = await this.importRawAesKey(data.rawKey);
                 return {
                     key,
                     email: data.email,
@@ -170,6 +198,14 @@
                 await this.storeKeyInSession(password, window.vaultCryptoSession.email, saltHex, iterations);
 
                 return key;
+            },
+
+            rememberUnlockMetadata(email, salt, iterations = this.iterations) {
+                sessionStorage.setItem('vault_session', JSON.stringify({
+                    email: String(email).trim().toLowerCase(),
+                    salt,
+                    iterations,
+                }));
             },
 
             async encryptVaultItem(item) {
@@ -316,6 +352,22 @@
                 window.vaultCryptoSession.email = null;
                 sessionStorage.removeItem('vault_session');
             },
+
+            lockVault() {
+                const sessionData = {
+                    email: window.vaultCryptoSession.email,
+                    salt: window.vaultCryptoSession.salt,
+                    iterations: window.vaultCryptoSession.iterations || this.iterations,
+                };
+
+                window.vaultCryptoSession.encryptionKey = null;
+
+                if (sessionData.email && sessionData.salt) {
+                    sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
+                } else {
+                    sessionStorage.removeItem('vault_session');
+                }
+            },
         };
 
         // Load session from storage
@@ -355,10 +407,13 @@
         window.showAlert = function(message, type = 'info') {
             const alertContainer = document.createElement('div');
             alertContainer.className = `alert alert-${type} alert-dismissible fade show`;
-            alertContainer.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
+            alertContainer.appendChild(document.createTextNode(String(message)));
+
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'btn-close';
+            closeButton.setAttribute('data-bs-dismiss', 'alert');
+            alertContainer.appendChild(closeButton);
 
             document.body.appendChild(alertContainer);
 
@@ -380,7 +435,11 @@
         }
 
         function checkSessionTimeout() {
-            // Session expired due to inactivity
+            if (typeof window.handleVaultAutoLock === 'function') {
+                window.handleVaultAutoLock();
+                return;
+            }
+
             localStorage.removeItem('api_token');
             window.vaultCrypto.clearMemoryKey();
             showAlert('Your session has expired due to inactivity. Please log in again.', 'warning');
