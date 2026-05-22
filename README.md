@@ -903,18 +903,20 @@ curl -X GET http://localhost:8000/api/vaults/1/files/5 \
 
 ### Update File
 
-**Endpoint:** `POST /vaults/{vault_id}/files/{file_id}`
+**Endpoint:** `PUT /vaults/{vault_id}/files/{file_id}` or `PATCH /vaults/{vault_id}/files/{file_id}`
 
 **Headers:**
 - `Authorization: Bearer {token}`
 
 **Form Data:**
 - `file` - The new file to upload
+- `_method` - `PUT` or `PATCH` (required when using multipart form uploads)
 
 **cURL Example:**
 ```bash
 curl -X POST http://localhost:8000/api/vaults/1/files/5 \
   -H "Authorization: Bearer 1|abc123def456..." \
+  -F "_method=PUT" \
   -F "file=@/path/to/new-document.pdf"
 ```
 
