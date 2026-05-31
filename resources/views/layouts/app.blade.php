@@ -262,259 +262,315 @@
             email: null,
         };
 
-        window.vaultCrypto = {
-            iterations: 100000,
+                window.vaultCrypto = {
 
-            passwordToUint8Array(password) {
-                return new TextEncoder().encode(password);
-            },
+    // ── Base64 Helpers ──────────────────────────────────────────────────
+    //
+    // Flutter uses dart:convert base64.encode which produces:
+    //   - Standard base64 alphabet: A-Z a-z 0-9 + /
+    //   - WITH padding (=) always
+    //
+    // These helpers must match that exactly.
 
-            hexToUint8Array(hex) {
-                if (!hex || hex.length % 2 !== 0) {
-                    throw new Error('Salt must be a valid hex string.');
-                }
+    arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    },
 
-                const bytes = new Uint8Array(hex.length / 2);
-                for (let i = 0; i < hex.length; i += 2) {
-                    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-                }
-                return bytes;
-            },
+    base64ToUint8Array(base64Str) {
+        let s = base64Str
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
 
-            getSaltStorageKey(email) {
-                return `vault_crypto_salt:${String(email).trim().toLowerCase()}`;
-            },
+        const pad = s.length % 4;
+        if (pad === 2) s += '==';
+        else if (pad === 3) s += '=';
 
-            storeSalt(email, salt) {
-                localStorage.setItem(this.getSaltStorageKey(email), salt);
-            },
+        const binary = atob(s);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    },
 
-            getStoredSalt(email) {
-                return localStorage.getItem(this.getSaltStorageKey(email));
-            },
+    getSaltStorageKey(email) {
+        return `vault_crypto_salt:${String(email).trim().toLowerCase()}`;
+    },
 
-            arrayBufferToBase64(buffer) {
-                const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-                let binary = '';
-                bytes.forEach(byte => {
-                    binary += String.fromCharCode(byte);
-                });
-                return btoa(binary);
-            },
+    storeSalt(email, salt) {
+        localStorage.setItem(this.getSaltStorageKey(email), salt);
+    },
 
-            base64ToUint8Array(base64) {
-                const binary = atob(base64);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) {
-                    bytes[i] = binary.charCodeAt(i);
-                }
-                return bytes;
-            },
+    getStoredSalt(email) {
+        return localStorage.getItem(this.getSaltStorageKey(email));
+    },
 
-            async importRawAesKey(base64Key) {
-                return crypto.subtle.importKey(
-                    'raw',
-                    this.base64ToUint8Array(base64Key),
-                    { name: 'AES-GCM', length: 256 },
-                    true,
-                    ['encrypt', 'decrypt']
-                );
-            },
+    async importRawAesKey(base64Key) {
+        return crypto.subtle.importKey(
+            'raw',
+            this.base64ToUint8Array(base64Key),
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
+    },
 
-            async storeKeyInSession(masterPassword, email, salt, iterations) {
-                if (!window.vaultCryptoSession.encryptionKey) {
-                    throw new Error('No key is available to store for this session.');
-                }
+    async storeKeyInSession(masterPassword, email, salt, iterations) {
+        if (!window.vaultCryptoSession.encryptionKey) {
+            throw new Error('No key is available to store for this session.');
+        }
 
-                const rawKey = await crypto.subtle.exportKey('raw', window.vaultCryptoSession.encryptionKey);
-                sessionStorage.setItem('vault_session', JSON.stringify({
-                    email,
-                    salt,
-                    iterations,
-                    rawKey: this.arrayBufferToBase64(rawKey),
-                }));
-            },
+        const rawKey = await crypto.subtle.exportKey('raw', window.vaultCryptoSession.encryptionKey);
+        sessionStorage.setItem('vault_session', JSON.stringify({
+            email,
+            salt,
+            iterations,
+            rawKey: this.arrayBufferToBase64(rawKey),
+        }));
+    },
 
-            async loadSessionFromStorage() {
-                const dataStr = sessionStorage.getItem('vault_session');
-                if (!dataStr) return null;
+    async loadSessionFromStorage() {
+        const dataStr = sessionStorage.getItem('vault_session');
+        if (!dataStr) return null;
 
-                const data = JSON.parse(dataStr);
-                if (!data.rawKey) {
-                    return {
-                        key: null,
-                        email: data.email,
-                        salt: data.salt,
-                        iterations: data.iterations,
-                    };
-                }
+        const data = JSON.parse(dataStr);
+        if (!data.rawKey) {
+            return {
+                key: null,
+                email: data.email,
+                salt: data.salt,
+                iterations: data.iterations,
+            };
+        }
 
-                return {
-                    key: await this.importRawAesKey(data.rawKey),
-                    email: data.email,
-                    salt: data.salt,
-                    iterations: data.iterations,
-                };
-            },
-
-            async deriveAesKey(password, saltHex, iterations = this.iterations) {
-                const baseKey = await crypto.subtle.importKey(
-                    'raw',
-                    this.passwordToUint8Array(password),
-                    'PBKDF2',
-                    false,
-                    ['deriveKey']
-                );
-
-                return crypto.subtle.deriveKey(
-                    {
-                        name: 'PBKDF2',
-                        salt: this.hexToUint8Array(saltHex),
-                        iterations,
-                        hash: 'SHA-256',
-                    },
-                    baseKey,
-                    { name: 'AES-GCM', length: 256 },
-                    true,
-                    ['encrypt', 'decrypt']
-                );
-            },
-
-            async deriveAndStoreKey(password, email, saltHex, iterations = this.iterations) {
-                const key = await this.deriveAesKey(password, saltHex, iterations);
-                this.storeSalt(email, saltHex);
-                window.vaultCryptoSession.encryptionKey = key;
-                window.vaultCryptoSession.salt = saltHex;
-                window.vaultCryptoSession.iterations = iterations;
-                window.vaultCryptoSession.email = String(email).trim().toLowerCase();
-                await this.storeKeyInSession(password, window.vaultCryptoSession.email, saltHex, iterations);
-                return key;
-            },
-
-            async encryptVaultItem(item) {
-                const key = window.vaultCryptoSession.encryptionKey;
-                if (!key) throw new Error('Encryption key is not available in memory. Please unlock again.');
-
-                const iv = crypto.getRandomValues(new Uint8Array(12));
-                const encryptedBuffer = await crypto.subtle.encrypt(
-                    { name: 'AES-GCM', iv, tagLength: 128 },
-                    key,
-                    new TextEncoder().encode(JSON.stringify(item))
-                );
-                const encryptedBytes = new Uint8Array(encryptedBuffer);
-                const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
-                const tag = encryptedBytes.slice(encryptedBytes.length - 16);
-
-                return {
-                    encrypted_data: this.arrayBufferToBase64(ciphertext),
-                    iv: this.arrayBufferToBase64(iv),
-                    tag: this.arrayBufferToBase64(tag),
-                };
-            },
-
-            async decryptVaultItem({ encrypted_data, iv, tag }) {
-                const key = window.vaultCryptoSession.encryptionKey;
-                if (!key) throw new Error('Encryption key is not available in memory. Please unlock again.');
-
-                const ciphertext = this.base64ToUint8Array(encrypted_data);
-                const tagBytes = this.base64ToUint8Array(tag);
-                const encryptedBytes = new Uint8Array(ciphertext.length + tagBytes.length);
-                encryptedBytes.set(ciphertext, 0);
-                encryptedBytes.set(tagBytes, ciphertext.length);
-
-                try {
-                    const decryptedBuffer = await crypto.subtle.decrypt(
-                        { name: 'AES-GCM', iv: this.base64ToUint8Array(iv), tagLength: 128 },
-                        key,
-                        encryptedBytes
-                    );
-                    return JSON.parse(new TextDecoder().decode(decryptedBuffer));
-                } catch (error) {
-                    throw new Error('Unable to decrypt item. The in-memory key may be missing or incorrect.');
-                }
-            },
-
-            readFileAsArrayBuffer(file) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
-                    reader.readAsArrayBuffer(file);
-                });
-            },
-
-            async encryptFile(file) {
-                const key = window.vaultCryptoSession.encryptionKey;
-                if (!key) throw new Error('Encryption key is not available in memory. Please unlock again.');
-
-                const iv = crypto.getRandomValues(new Uint8Array(12));
-                const encryptedBuffer = await crypto.subtle.encrypt(
-                    { name: 'AES-GCM', iv, tagLength: 128 },
-                    key,
-                    await this.readFileAsArrayBuffer(file)
-                );
-                const encryptedBytes = new Uint8Array(encryptedBuffer);
-                const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
-                const tag = encryptedBytes.slice(encryptedBytes.length - 16);
-
-                return {
-                    encryptedBlob: new Blob([ciphertext], { type: 'application/octet-stream' }),
-                    fileName: file.name,
-                    mimeType: file.type || 'application/octet-stream',
-                    size: file.size,
-                    iv: this.arrayBufferToBase64(iv),
-                    tag: this.arrayBufferToBase64(tag),
-                };
-            },
-
-            async decryptFile(encryptedBuffer, iv, tag, mimeType = 'application/octet-stream') {
-                const key = window.vaultCryptoSession.encryptionKey;
-                if (!key) throw new Error('Encryption key is not available in memory. Please unlock again.');
-
-                const ciphertext = new Uint8Array(encryptedBuffer);
-                const tagBytes = this.base64ToUint8Array(tag);
-                const encryptedBytes = new Uint8Array(ciphertext.length + tagBytes.length);
-                encryptedBytes.set(ciphertext, 0);
-                encryptedBytes.set(tagBytes, ciphertext.length);
-
-                const decryptedBuffer = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: this.base64ToUint8Array(iv), tagLength: 128 },
-                    key,
-                    encryptedBytes
-                );
-                return new Blob([decryptedBuffer], { type: mimeType });
-            },
-
-            clearMemoryKey() {
-                window.vaultCryptoSession.encryptionKey = null;
-                window.vaultCryptoSession.salt = null;
-                window.vaultCryptoSession.iterations = this.iterations;
-                window.vaultCryptoSession.email = null;
-                sessionStorage.removeItem('vault_session');
-            },
-
-            lockVault() {
-                const sessionData = {
-                    email: window.vaultCryptoSession.email,
-                    salt: window.vaultCryptoSession.salt,
-                    iterations: window.vaultCryptoSession.iterations || this.iterations,
-                };
-                window.vaultCryptoSession.encryptionKey = null;
-                if (sessionData.email && sessionData.salt) {
-                    sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
-                } else {
-                    sessionStorage.removeItem('vault_session');
-                }
-            },
+        return {
+            key: await this.importRawAesKey(data.rawKey),
+            email: data.email,
+            salt: data.salt,
+            iterations: data.iterations,
         };
+    },
+
+    async deriveAndStoreKey(password, email, saltHex, iterations = this.iterations) {
+        const key = await this.deriveKey(password, saltHex, iterations);
+        this.storeSalt(email, saltHex);
+        window.vaultCryptoSession.encryptionKey = key;
+        window.vaultCryptoSession.salt = saltHex;
+        window.vaultCryptoSession.iterations = iterations;
+        window.vaultCryptoSession.email = String(email).trim().toLowerCase();
+        await this.storeKeyInSession(password, window.vaultCryptoSession.email, saltHex, iterations);
+        return key;
+    },
+
+    clearMemoryKey() {
+        window.vaultCryptoSession.encryptionKey = null;
+        window.vaultCryptoSession.salt = null;
+        window.vaultCryptoSession.iterations = this.iterations;
+        window.vaultCryptoSession.email = null;
+        sessionStorage.removeItem('vault_session');
+    },
+
+    lockVault() {
+        const sessionData = {
+            email: window.vaultCryptoSession.email,
+            salt: window.vaultCryptoSession.salt,
+            iterations: window.vaultCryptoSession.iterations || this.iterations,
+        };
+        window.vaultCryptoSession.encryptionKey = null;
+        if (sessionData.email && sessionData.salt) {
+            sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
+        } else {
+            sessionStorage.removeItem('vault_session');
+        }
+    },
+
+    hexToUint8Array(hex) {
+        const clean = hex.replace(/\s/g, '').toLowerCase();
+        const bytes = new Uint8Array(clean.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+            bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    },
+
+    // ── Key Derivation ──────────────────────────────────────────────────
+    //
+    // Must match Flutter exactly:
+    //   Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: N, bits: 256)
+    //
+    async deriveKey(masterPassword, saltHex, iterations) {
+        const passwordBytes = new TextEncoder().encode(masterPassword);
+        const salt = this.hexToUint8Array(saltHex);
+
+        const baseKey = await crypto.subtle.importKey(
+            'raw',
+            passwordBytes,
+            { name: 'PBKDF2' },
+            false,
+            ['deriveKey']
+        );
+
+        const aesKey = await crypto.subtle.deriveKey(
+            {
+                name: 'PBKDF2',
+                salt: salt,
+                iterations: iterations,
+                hash: 'SHA-256',
+            },
+            baseKey,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
+
+        return aesKey;
+    },
+
+    // ── Session Storage ─────────────────────────────────────────────────
+    async initSession(masterPassword, saltHex, iterations) {
+        const key = await this.deriveKey(masterPassword, saltHex, iterations);
+        window.vaultCryptoSession = {
+            encryptionKey: key,
+            saltHex: saltHex,
+            iterations: iterations,
+        };
+        return key;
+    },
+
+    // ── Encryption ──────────────────────────────────────────────────────
+    async encryptVaultItem(plainObject) {
+        const key = window.vaultCryptoSession.encryptionKey;
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const plainText = JSON.stringify(plainObject);
+        const plainBytes = new TextEncoder().encode(plainText);
+
+        const encryptedBuffer = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: iv, tagLength: 128 },
+            key,
+            plainBytes
+        );
+
+        const encryptedBytes = new Uint8Array(encryptedBuffer);
+        const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
+        const tag = encryptedBytes.slice(encryptedBytes.length - 16);
+
+        return {
+            encrypted_data: this.arrayBufferToBase64(ciphertext),
+            iv: this.arrayBufferToBase64(iv),
+            tag: this.arrayBufferToBase64(tag),
+        };
+    },
+
+    // ── Decryption ──────────────────────────────────────────────────────
+    async decryptVaultItem({ encrypted_data, iv, tag }) {
+        const key = window.vaultCryptoSession.encryptionKey;
+
+        const ciphertext = this.base64ToUint8Array(encrypted_data);
+        const ivBytes = this.base64ToUint8Array(iv);
+        const tagBytes = this.base64ToUint8Array(tag);
+
+        if (ivBytes.length !== 12) {
+            throw new Error(`Invalid IV length: ${ivBytes.length} bytes (expected 12)`);
+        }
+        if (tagBytes.length !== 16) {
+            throw new Error(`Invalid tag length: ${tagBytes.length} bytes (expected 16)`);
+        }
+
+        const combined = new Uint8Array(ciphertext.length + tagBytes.length);
+        combined.set(ciphertext, 0);
+        combined.set(tagBytes, ciphertext.length);
+
+        const decryptedBuffer = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: ivBytes, tagLength: 128 },
+            key,
+            combined
+        );
+
+        const plainText = new TextDecoder().decode(decryptedBuffer);
+        return JSON.parse(plainText);
+    },
+
+    // ── File Encryption ─────────────────────────────────────────────────
+    async encryptFile(file) {
+        const key = window.vaultCryptoSession.encryptionKey;
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+
+        const fileBuffer = await this.readFileAsArrayBuffer(file);
+        const encryptedBuffer = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv, tagLength: 128 },
+            key,
+            fileBuffer
+        );
+
+        const encryptedBytes = new Uint8Array(encryptedBuffer);
+        const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
+        const tag = encryptedBytes.slice(encryptedBytes.length - 16);
+
+        return {
+            encryptedBlob: new Blob([ciphertext], { type: 'application/octet-stream' }),
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            iv: this.arrayBufferToBase64(iv),
+            tag: this.arrayBufferToBase64(tag),
+        };
+    },
+
+    async decryptFile(encryptedArrayBuffer, ivBase64, tagBase64) {
+        const key = window.vaultCryptoSession.encryptionKey;
+        const iv = this.base64ToUint8Array(ivBase64);
+        const tagBytes = this.base64ToUint8Array(tagBase64);
+
+        const ciphertext = new Uint8Array(encryptedArrayBuffer);
+        const combined = new Uint8Array(ciphertext.length + tagBytes.length);
+        combined.set(ciphertext, 0);
+        combined.set(tagBytes, ciphertext.length);
+
+        const decryptedBuffer = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv, tagLength: 128 },
+            key,
+            combined
+        );
+
+        return new Blob([decryptedBuffer]);
+    },
+
+    readFileAsArrayBuffer(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsArrayBuffer(file);
+        });
+    },
+
+    // ── Debug Helper ────────────────────────────────────────────────────
+    async debugExportKey() {
+        const key = window.vaultCryptoSession.encryptionKey;
+        const raw = await crypto.subtle.exportKey('raw', key);
+        const hex = [...new Uint8Array(raw)]
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+        console.log('[VaultCrypto] derived key hex:', hex);
+        console.log('[VaultCrypto] key length bytes:', new Uint8Array(raw).length);
+        return hex;
+    },
+
+};
 
         (async () => {
-            const session = await window.vaultCrypto.loadSessionFromStorage();
-            if (session) {
-                window.vaultCryptoSession.encryptionKey = session.key;
-                window.vaultCryptoSession.email = session.email;
-                window.vaultCryptoSession.salt = session.salt;
-                window.vaultCryptoSession.iterations = session.iterations;
+            if (typeof window.vaultCrypto.loadSessionFromStorage === 'function') {
+                const session = await window.vaultCrypto.loadSessionFromStorage();
+                if (session) {
+                    window.vaultCryptoSession.encryptionKey = session.key;
+                    window.vaultCryptoSession.email = session.email;
+                    window.vaultCryptoSession.salt = session.salt;
+                    window.vaultCryptoSession.iterations = session.iterations;
+                }
             }
         })();
 
