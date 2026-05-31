@@ -496,7 +496,7 @@ function renderItemRow(item) {
     const data = state.decryptedItems.get(String(item.id));
     const title = data?.title || 'Unable to decrypt';
     const username = data?.username || '';
-    const password = data?.password || '';
+    const password = data?.secret || '';
 
     return `
         <tr>
@@ -504,9 +504,9 @@ function renderItemRow(item) {
             <td><span class="badge text-bg-light">${escapeHtml(item.type)}</span></td>
             <td>${escapeHtml(username)}</td>
             <td>
-                <code class="masked-secret" data-sensitive-item-id="${item.id}" data-sensitive-field="password">${escapeHtml(maskValue(password))}</code>
-                <button class="btn btn-sm btn-outline-secondary ms-2" data-secret-toggle data-revealed="false" onclick="toggleSensitiveField(${item.id}, 'password', this)">Show</button>
-                <button class="btn btn-sm btn-outline-secondary ms-1" onclick="copySensitiveField(${item.id}, 'password')"><i class="bi bi-clipboard"></i></button>
+                <code class="masked-secret" data-sensitive-item-id="${item.id}" data-sensitive-field="secret">${escapeHtml(maskValue(password))}</code>
+                <button class="btn btn-sm btn-outline-secondary ms-2" data-secret-toggle data-revealed="false" onclick="toggleSensitiveField(${item.id}, 'secret', this)">Show</button>
+                <button class="btn btn-sm btn-outline-secondary ms-1" onclick="copySensitiveField(${item.id}, 'secret')"><i class="bi bi-clipboard"></i></button>
             </td>
             <td>${formatDate(item.created_at)}</td>
             <td class="text-end">
@@ -633,7 +633,7 @@ async function saveItem() {
         const encrypted = await window.vaultCrypto.encryptVaultItem({
             title: data.title,
             username: data.username || '',
-            password: data.password || '',
+            secret: data.password || '',
             notes: data.notes || '',
         });
         const response = await axios.post(`/api/vaults/${data.vault_id}/items`, {
