@@ -18,7 +18,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10
 
 Route::middleware('auth:sanctum')->group(function () {
     // Dashboard 
-    Route::class(AuthController::class)->group(function () {
+    Route::controller(AuthController::class)->group(function () {
         Route::get('/dashboard', 'dashboard');
         Route::post('/logout', 'logout');
     });
