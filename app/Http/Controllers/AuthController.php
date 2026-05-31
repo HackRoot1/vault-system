@@ -65,13 +65,13 @@ class AuthController extends Controller
     {
         $totalVaults = $request->user()->vaults()->count();
         $totalItems = $request->user()->vaults()->withCount('items')->get()->sum('items_count');
-        $totalFiles = $request->user()->vaults()->withCount('files')->get()->sum('files_count');
+        $totalFiles = $request->user()->vaults()->withCount('fileItems')->get()->sum('file_items_count');
 
         return ApiResponse::success([
             'user' => $request->user(),
             'total_vaults' => $totalVaults,
             'total_items' => $totalItems,
-            'total_files' => $totalFiles,
+            'total_file_items' => $totalFiles,
         ], 'Dashboard data retrieved successfully');
     }
 
