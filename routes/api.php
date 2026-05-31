@@ -17,7 +17,11 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1'); // Rate limiting: 10 attempts per minute
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout']);
+    // Dashboard 
+    Route::class(AuthController::class)->group(function () {
+        Route::get('/dashboard', 'dashboard');
+        Route::post('/logout', 'logout');
+    });
     Route::get('/user', function (Request $request) {
         return $request->user();
     });

@@ -61,6 +61,20 @@ class AuthController extends Controller
         return ApiResponse::success(null, 'Logged out successfully');
     }
 
+    public function dashboard(Request $request)
+    {
+        $totalVaults = $request->user()->vaults()->count();
+        $totalItems = $request->user()->vaults()->withCount('items')->get()->sum('items_count');
+        $totalFiles = $request->user()->vaults()->withCount('files')->get()->sum('files_count');
+
+        return ApiResponse::success([
+            'user' => $request->user(),
+            'total_vaults' => $totalVaults,
+            'total_items' => $totalItems,
+            'total_files' => $totalFiles,
+        ], 'Dashboard data retrieved successfully');
+    }
+
     public function setup2FA(Request $request)
     {
         $result = $this->authService->setup2FA($request->user());

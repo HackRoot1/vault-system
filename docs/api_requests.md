@@ -43,6 +43,13 @@ curl -X GET http://localhost:8000/api/user \
   -H "Authorization: Bearer 1|abc123def456..."
 ```
 
+## Dashboard
+
+```bash
+curl -X GET http://localhost:8000/api/dashboard \
+  -H "Authorization: Bearer 1|abc123def456..."
+```
+
 ## Logout User
 
 ```bash
