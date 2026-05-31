@@ -60,4 +60,14 @@ class FileRepository extends BaseRepository
 
         return $file->delete();
     }
+
+    public function findRecentByUser(int $userId, int $limit = 5): Collection
+    {
+        return $this->model->join('vaults', 'file_items.vault_id', '=', 'vaults.id')
+            ->where('vaults.user_id', $userId)
+            ->orderBy('file_items.updated_at', 'desc')
+            ->limit($limit)
+            ->select('file_items.*')
+            ->get();
+    }
 }

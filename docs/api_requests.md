@@ -50,6 +50,19 @@ curl -X GET http://localhost:8000/api/dashboard \
   -H "Authorization: Bearer 1|abc123def456..."
 ```
 
+## Recent Dashboard Data
+
+```bash
+curl -X GET http://localhost:8000/api/dashboard/recent-vaults \
+  -H "Authorization: Bearer 1|abc123def456..."
+
+curl -X GET http://localhost:8000/api/dashboard/recent-items \
+  -H "Authorization: Bearer 1|abc123def456..."
+
+curl -X GET http://localhost:8000/api/dashboard/recent-files \
+  -H "Authorization: Bearer 1|abc123def456..."
+```
+
 ## Logout User
 
 ```bash

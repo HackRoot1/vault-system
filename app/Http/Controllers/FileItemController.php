@@ -51,14 +51,16 @@ class FileItemController extends Controller
 
             return ApiResponse::success(new FileItemResource($fileItem), 'File uploaded successfully', 201);
         } catch (\Exception $e) {
-            return ApiResponse::error('Failed to upload file: '.$e->getMessage(), 500);
+            return ApiResponse::error('Failed to upload file: ' . $e->getMessage(), 500);
         }
     }
 
     public function show(Vault $vault, FileItem $file)
     {
-        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
-            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
+        if (
+            ! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)
+        ) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
@@ -67,8 +69,10 @@ class FileItemController extends Controller
 
     public function update(FileItemRequest $request, Vault $vault, FileItem $file)
     {
-        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
-            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
+        if (
+            ! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)
+        ) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
@@ -90,14 +94,16 @@ class FileItemController extends Controller
 
             return ApiResponse::success(new FileItemResource($file), 'File updated successfully');
         } catch (\Exception $e) {
-            return ApiResponse::error('Failed to update file: '.$e->getMessage(), 500);
+            return ApiResponse::error('Failed to update file: ' . $e->getMessage(), 500);
         }
     }
 
     public function destroy(Vault $vault, FileItem $file)
     {
-        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
-            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
+        if (
+            ! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)
+        ) {
             return ApiResponse::error('Unauthorized', 403);
         }
 
@@ -110,6 +116,15 @@ class FileItemController extends Controller
         return ApiResponse::success(null, 'File deleted successfully');
     }
 
+    /**
+     * Recent Files.
+     */
+    public function recent()
+    {
+        $files = $this->fileService->getRecentFiles(auth()->id());
+        return ApiResponse::success(FileItemResource::collection($files));
+    }
+
     public function download(string $token)
     {
         $result = $this->fileService->downloadFile($token);
@@ -118,11 +133,11 @@ class FileItemController extends Controller
             return ApiResponse::error('Download token invalid or expired.', 404);
         }
 
-        $downloadName = str_replace(['"', "\r", "\n"], '', $result['filename']).'.enc';
+        $downloadName = str_replace(['"', "\r", "\n"], '', $result['filename']) . '.enc';
 
         return response($result['content'], 200, [
             'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="'.$downloadName.'"',
+            'Content-Disposition' => 'attachment; filename="' . $downloadName . '"',
             'X-File-Name' => rawurlencode($result['filename']),
             'X-File-Iv' => $result['iv'],
             'X-File-Tag' => $result['tag'],
@@ -131,8 +146,10 @@ class FileItemController extends Controller
 
     public function downloadUrl(Vault $vault, FileItem $file)
     {
-        if (! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
-            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)) {
+        if (
+            ! $this->vaultService->authorizeVaultAccess(Auth::id(), $vault->id) ||
+            ! $this->fileService->getUserVaultFile(Auth::id(), $vault->id, $file->id)
+        ) {
             return ApiResponse::error('Unauthorized', 403);
         }
 

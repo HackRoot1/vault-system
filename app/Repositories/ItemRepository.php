@@ -62,6 +62,16 @@ class ItemRepository extends BaseRepository
         return $item->delete();
     }
 
+    public function findRecentByUser(int $userId, int $limit = 5): Collection
+    {
+        return $this->model->join('vaults', 'items.vault_id', '=', 'vaults.id')
+            ->where('vaults.user_id', $userId)
+            ->orderBy('items.updated_at', 'desc')
+            ->limit($limit)
+            ->select('items.*')
+            ->get();
+    }
+
     public function syncItems(int $userId, Carbon $lastSync): Collection
     {
         $vaultIds = app(VaultRepository::class)->findByUser($userId)->pluck('id');

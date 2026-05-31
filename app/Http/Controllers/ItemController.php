@@ -130,4 +130,13 @@ class ItemController extends Controller
 
         return ApiResponse::success(null, 'Item deleted successfully');
     }
+
+    /**
+     * Get recently edited items for dashboard.
+     */
+    public function recent()
+    {
+        $items = $this->itemService->getRecentItems(auth()->id());
+        return ApiResponse::success(ItemResource::collection($items));
+    }
 }

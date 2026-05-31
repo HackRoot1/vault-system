@@ -86,4 +86,13 @@ class VaultController extends Controller
 
         return ApiResponse::success(null, 'Vault deleted successfully');
     }
+
+    /**
+     * Get recently edited vaults for dashboard.
+     */
+    public function recent()
+    {
+        $vaults = $this->vaultService->getRecentVaults(auth()->id());
+        return ApiResponse::success(VaultResource::collection($vaults));
+    }
 }

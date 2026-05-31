@@ -40,6 +40,11 @@ class VaultService
         return $this->vaultRepository->deleteUserVault($userId, $vaultId);
     }
 
+    public function getRecentVaults(int $userId, int $limit = 5): Collection
+    {
+        return $this->vaultRepository->findRecentByUser($userId, $limit);
+    }
+
     public function authorizeVaultAccess(int $userId, int $vaultId): bool
     {
         $vault = $this->getUserVault($userId, $vaultId);

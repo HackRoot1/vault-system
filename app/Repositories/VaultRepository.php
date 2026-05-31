@@ -50,4 +50,12 @@ class VaultRepository extends BaseRepository
 
         return $vault->delete();
     }
+
+    public function findRecentByUser(int $userId, int $limit = 5): Collection
+    {
+        return $this->model->where('user_id', $userId)
+            ->orderBy('updated_at', 'desc')
+            ->limit($limit)
+            ->get();
+    }
 }

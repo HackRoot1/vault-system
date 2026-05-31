@@ -84,6 +84,11 @@ class FileService
         return $this->fileRepository->deleteVaultFile($vaultId, $fileId);
     }
 
+    public function getRecentFiles(int $userId, int $limit = 5)
+    {
+        return $this->fileRepository->findRecentByUser($userId, $limit);
+    }
+
     public function generateDownloadUrl(int $userId, int $vaultId, int $fileId): ?array
     {
         $file = $this->getUserVaultFile($userId, $vaultId, $fileId);

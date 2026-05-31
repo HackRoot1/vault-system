@@ -37,6 +37,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('vaults.items', ItemController::class);
     Route::apiResource('vaults.files', FileItemController::class);
     Route::get('/vaults/{vault}/files/{file}/download-url', [FileItemController::class, 'downloadUrl']);
+
+    // Recent vaults, items, and files for dashboard
+    Route::get('/dashboard/recent-vaults', [VaultController::class, 'recent']);
+    Route::get('/dashboard/recent-items', [ItemController::class, 'recent']);
+    Route::get('/dashboard/recent-files', [FileItemController::class, 'recent']);
 });
 
 Route::get('/files/download/{token}', [FileItemController::class, 'download'])->name('files.download');

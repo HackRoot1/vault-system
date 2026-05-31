@@ -73,6 +73,11 @@ class ItemService
         return $this->itemRepository->deleteVaultItem($vaultId, $itemId);
     }
 
+    public function getRecentItems(int $userId, int $limit = 5): Collection
+    {
+        return $this->itemRepository->findRecentByUser($userId, $limit);
+    }
+
     public function syncItems(int $userId, string $lastSync): Collection
     {
         try {
