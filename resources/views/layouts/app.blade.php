@@ -264,6 +264,8 @@
 
                 window.vaultCrypto = {
 
+  iterations: 100000,
+
   // Base64
   // Must match Flutter _b64Encode: standard base64 WITH padding via btoa.
   // Must match Flutter _b64Decode: normalize padding before decode.
@@ -304,6 +306,115 @@
     return out;
   },
 
+  arrayBufferToBase64(buffer) {
+    return this.b64Encode(new Uint8Array(buffer));
+  },
+
+  base64ToUint8Array(base64Str) {
+    return this.b64Decode(base64Str);
+  },
+
+  hexToUint8Array(hex) {
+    return this.hexToBytes(hex);
+  },
+
+  getSaltStorageKey(email) {
+    return `vault_crypto_salt:${String(email).trim().toLowerCase()}`;
+  },
+
+  storeSalt(email, salt) {
+    localStorage.setItem(this.getSaltStorageKey(email), salt);
+  },
+
+  getStoredSalt(email) {
+    return localStorage.getItem(this.getSaltStorageKey(email));
+  },
+
+  async importRawAesKey(base64Key) {
+    return crypto.subtle.importKey(
+      'raw',
+      this.b64Decode(base64Key),
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+  },
+
+  async storeKeyInSession(masterPassword, email, salt, iterations) {
+    if (!window.vaultCryptoSession.encryptionKey) {
+      throw new Error('No key is available to store for this session.');
+    }
+
+    const rawKey = await crypto.subtle.exportKey(
+      'raw', window.vaultCryptoSession.encryptionKey);
+    sessionStorage.setItem('vault_session', JSON.stringify({
+      email,
+      salt,
+      iterations,
+      rawKey: this.b64Encode(new Uint8Array(rawKey)),
+    }));
+  },
+
+  async loadSessionFromStorage() {
+    const dataStr = sessionStorage.getItem('vault_session');
+    if (!dataStr) return null;
+
+    const data = JSON.parse(dataStr);
+    if (!data.rawKey) {
+      return {
+        key: null,
+        email: data.email,
+        salt: data.salt,
+        iterations: data.iterations,
+      };
+    }
+
+    return {
+      key: await this.importRawAesKey(data.rawKey),
+      email: data.email,
+      salt: data.salt,
+      iterations: data.iterations,
+    };
+  },
+
+  async deriveAndStoreKey(password, email, saltHex, iterations = this.iterations) {
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const key = await this.deriveKey(password, saltHex, iterations);
+
+    this.storeSalt(normalizedEmail, saltHex);
+    window.vaultCryptoSession.encryptionKey = key;
+    window.vaultCryptoSession.salt = saltHex;
+    window.vaultCryptoSession.saltHex = saltHex;
+    window.vaultCryptoSession.iterations = iterations;
+    window.vaultCryptoSession.email = normalizedEmail;
+
+    await this.storeKeyInSession(password, normalizedEmail, saltHex, iterations);
+    return key;
+  },
+
+  clearMemoryKey() {
+    window.vaultCryptoSession.encryptionKey = null;
+    window.vaultCryptoSession.salt = null;
+    window.vaultCryptoSession.saltHex = null;
+    window.vaultCryptoSession.iterations = this.iterations;
+    window.vaultCryptoSession.email = null;
+    sessionStorage.removeItem('vault_session');
+  },
+
+  lockVault() {
+    const sessionData = {
+      email: window.vaultCryptoSession.email,
+      salt: window.vaultCryptoSession.salt || window.vaultCryptoSession.saltHex,
+      iterations: window.vaultCryptoSession.iterations || this.iterations,
+    };
+    window.vaultCryptoSession.encryptionKey = null;
+    if (sessionData.email && sessionData.salt) {
+      sessionStorage.setItem('vault_session', JSON.stringify(sessionData));
+    } else {
+      sessionStorage.removeItem('vault_session');
+    }
+  },
+
   // Key Derivation
   // Confirmed matching Flutter. DO NOT change anything here.
   // iterations MUST come from API response key_iterations field.
@@ -335,6 +446,7 @@
       masterPassword, saltHex, iterations);
     window.vaultCryptoSession = {
       encryptionKey: key,
+      salt: saltHex,
       saltHex,
       iterations,
     };
